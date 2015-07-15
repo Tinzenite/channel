@@ -28,25 +28,11 @@ type Channel struct {
 	transfersFilesizes map[uint32]uint64
 }
 
-// Callbacks for external wrapped access.
-type Callbacks interface {
-	/*callbackNewConnection is called on a Tox friend request.*/
-	callbackNewConnection(address, message string)
-	/*callbackMessage is called on an incomming message.*/
-	callbackMessage(address, message string)
-	/*callbackAllowFile is called when a file transfer is wished. Returns the
-	permission as bool and the path where to write the file.*/
-	callbackAllowFile(address, identification string) (bool, string)
-	/*callbackFileReceived is called once the file has been successfully
-	received completely.*/
-	callbackFileReceived(identification string)
-}
-
 /*
-CreateChannel creates and starts a new tox channel that continously runs in the background
+Create and starts a new tox channel that continously runs in the background
 until this object is destroyed.
 */
-func CreateChannel(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) {
+func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) {
 	if name == "" {
 		return nil, errors.New("CreateChannel called with no name!")
 	}
@@ -265,7 +251,7 @@ onFriendRequest calls the appropriate callback, wrapping it sanely for our purpo
 */
 func (channel *Channel) onFriendRequest(t *gotox.Tox, publicKey []byte, message string) {
 	if channel.callbacks != nil {
-		channel.callbacks.callbackNewConnection(hex.EncodeToString(publicKey), message)
+		channel.callbacks.OnNewConnection(hex.EncodeToString(publicKey), message)
 	} else {
 		log.Println("Error: callbacks are nil!")
 	}
@@ -283,7 +269,7 @@ func (channel *Channel) onFriendMessage(t *gotox.Tox, friendnumber uint32, messa
 				log.Println(err.Error())
 				address = illegalAddress
 			}
-			channel.callbacks.callbackMessage(address, message)
+			channel.callbacks.OnMessage(address, message)
 		} else {
 			log.Println("Error: callbacks are nil!")
 		}
@@ -313,7 +299,7 @@ func (channel *Channel) onFileRecv(t *gotox.Tox, friendnumber uint32, filenumber
 		address = illegalAddress
 	}
 	// use callback to check whether to accept from Tinzenite
-	accept, path := channel.callbacks.callbackAllowFile(address, filename)
+	accept, path := channel.callbacks.OnAllowFile(address, filename)
 	if !accept {
 		return
 	}
@@ -348,6 +334,6 @@ func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filen
 		delete(channel.transfers, filenumber)
 		delete(channel.transfersFilesizes, filenumber)
 		// can I read a name of a closed file?
-		channel.callbacks.callbackFileReceived(f.Name())
+		channel.callbacks.OnFileReceived(f.Name())
 	}
 }
