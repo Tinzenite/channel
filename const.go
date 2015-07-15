@@ -6,7 +6,7 @@ import "errors"
 Internal errors of channel.
 */
 var (
-	errLostAddress = errors.New("Could not determine address!")
+	errLostAddress = errors.New("could not determine address")
 )
 
 /*Default string values*/
