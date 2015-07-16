@@ -303,7 +303,7 @@ func (channel *Channel) onFileRecv(t *gotox.Tox, friendnumber uint32, filenumber
 	if !accept {
 		return
 	}
-	// Accept any file send request
+	// accept file send request if we come to here
 	t.FileControl(friendnumber, true, filenumber, gotox.TOX_FILE_CONTROL_RESUME, nil)
 	// create file at correct location
 	/*TODO how are pause & resume handled?*/
@@ -329,11 +329,12 @@ func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filen
 		// ensure file is written
 		f := channel.transfers[filenumber]
 		f.Sync()
+		name := f.Name()
 		f.Close()
 		// free resources
 		delete(channel.transfers, filenumber)
 		delete(channel.transfersFilesizes, filenumber)
-		// can I read a name of a closed file?
-		channel.callbacks.OnFileReceived(f.Name())
+		// callback with file name / identification
+		channel.callbacks.OnFileReceived(name)
 	}
 }
