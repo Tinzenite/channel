@@ -332,7 +332,11 @@ func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filen
 	if position == channel.transfersFilesizes[filenumber] {
 		// ensure file is written
 		f := channel.transfers[filenumber]
-		f.Sync()
+		err := f.Sync()
+		if err != nil {
+			log.Println("Disk error: " + err.Error())
+			return
+		}
 		pathelements := strings.Split(f.Name(), "/")
 		f.Close()
 		// free resources
