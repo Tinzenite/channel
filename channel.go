@@ -74,6 +74,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.tox.CallbackFileRecvControl(channel.onFileRecvControl)
 	channel.tox.CallbackFileRecv(channel.onFileRecv)
 	channel.tox.CallbackFileRecvChunk(channel.onFileRecvChunk)
+	channel.tox.CallbackFileChunkRequest(channel.onFileChunkRequest)
 	// some things must only be done if first start
 	if init {
 		// Bootstrap
@@ -147,6 +148,29 @@ func (channel *Channel) Send(address, message string) error {
 	// returns message ID but we currently don't use it
 	_, err = channel.tox.FriendSendMessage(id, gotox.TOX_MESSAGE_TYPE_NORMAL, message)
 	return err
+}
+
+/*
+SendFile sends a file to the given address. NOTE: Will block until done!
+*/
+func (channel *Channel) SendFile(address string, data []byte) error {
+	if ok, _ := channel.IsOnline(address); !ok {
+		return errOffline
+	}
+	// find friend id to send to
+	key, err := hex.DecodeString(address)
+	if err != nil {
+		return err
+	}
+	id, err := channel.tox.FriendByPublicKey(key)
+	if err != nil {
+		return err
+	}
+	err = channel.tox.FileControl(id, false, 5, gotox.TOX_FILE_CONTROL_RESUME, data)
+	if err != nil {
+		log.Println(err.Error())
+	}
+	return errors.New("not implemented")
 }
 
 /*
@@ -348,4 +372,11 @@ func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filen
 		path := strings.Join(pathelements, "/")
 		channel.callbacks.OnFileReceived(address, path, name)
 	}
+}
+
+/*
+TODO implement and comment
+*/
+func (channel *Channel) onFileChunkRequest(tox *gotox.Tox, friendnumber uint32, filenumber uint32, position uint64, length uint64) {
+	log.Println("Received chunk request!")
 }
