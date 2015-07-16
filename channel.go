@@ -333,13 +333,15 @@ func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filen
 		// ensure file is written
 		f := channel.transfers[filenumber]
 		f.Sync()
-		name := f.Name()
+		pathelements := strings.Split(f.Name(), "/")
 		f.Close()
 		// free resources
 		delete(channel.transfers, filenumber)
 		delete(channel.transfersFilesizes, filenumber)
 		// callback with file name / identification
 		address, _ := channel.addressOf(friendnumber)
-		channel.callbacks.OnFileReceived(address, name)
+		name := pathelements[len(pathelements)-1]
+		path := strings.Join(pathelements, "/")
+		channel.callbacks.OnFileReceived(address, path, name)
 	}
 }
