@@ -132,6 +132,10 @@ func (channel *Channel) ToxData() ([]byte, error) {
 Send a message to the given peer address.
 */
 func (channel *Channel) Send(address, message string) error {
+	if ok, _ := channel.IsOnline(address); !ok {
+		return errOffline
+	}
+	// find friend id to send to
 	key, err := hex.DecodeString(address)
 	if err != nil {
 		return err
@@ -335,6 +339,7 @@ func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filen
 		delete(channel.transfers, filenumber)
 		delete(channel.transfersFilesizes, filenumber)
 		// callback with file name / identification
-		channel.callbacks.OnFileReceived(name)
+		address, _ := channel.addressOf(friendnumber)
+		channel.callbacks.OnFileReceived(address, name)
 	}
 }

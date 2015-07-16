@@ -11,5 +11,5 @@ type Callbacks interface {
 	OnAllowFile(address, identification string) (bool, string)
 	/*CallbackFileReceived is called once the file has been successfully
 	received completely.*/
-	OnFileReceived(identification string)
+	OnFileReceived(address, identification string)
 }
