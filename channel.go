@@ -109,6 +109,10 @@ func (channel *Channel) Close() {
 	channel.wg.Wait()
 	// kill tox
 	channel.tox.Kill()
+	// clean all file transfers
+	for _, file := range channel.transfers {
+		file.Close()
+	}
 }
 
 /*
@@ -389,7 +393,7 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filen
 		// callback with file name / identification
 		address, _ := channel.addressOf(friendnumber)
 		name := pathelements[len(pathelements)-1]
-		path := strings.Join(pathelements, "/")
+		path := "/" + strings.Join(pathelements, "/")
 		channel.callbacks.OnFileReceived(address, path, name)
 	}
 }
