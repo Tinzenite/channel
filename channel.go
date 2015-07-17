@@ -3,6 +3,7 @@ package channel
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -153,7 +154,7 @@ func (channel *Channel) Send(address, message string) error {
 /*
 SendFile sends a file to the given address. NOTE: Will block until done!
 */
-func (channel *Channel) SendFile(address string, data []byte) error {
+func (channel *Channel) SendFile(address string, path string, identification string) error {
 	if ok, _ := channel.IsOnline(address); !ok {
 		return errOffline
 	}
@@ -166,11 +167,28 @@ func (channel *Channel) SendFile(address string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	err = channel.tox.FileControl(id, false, 5, gotox.TOX_FILE_CONTROL_RESUME, data)
+	// get file
+	file, err := os.Open(path)
 	if err != nil {
-		log.Println(err.Error())
+		return err
 	}
-	return errors.New("not implemented")
+	// do NOT close file! must be done elsewhere since we may need it later
+	// get file size
+	stat, err := os.Lstat(path)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	size := uint64(stat.Size())
+	// prepare send (file will be transmitted via filechunk)
+	fileNumber, err := channel.tox.FileSend(id, gotox.TOX_FILE_KIND_DATA, size, nil, identification)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	channel.transfers[fileNumber] = file
+	channel.transfersFilesizes[fileNumber] = size
+	return nil
 }
 
 /*
@@ -277,7 +295,7 @@ func (channel *Channel) addressOf(friendnumber uint32) (string, error) {
 /*
 onFriendRequest calls the appropriate callback, wrapping it sanely for our purposes.
 */
-func (channel *Channel) onFriendRequest(t *gotox.Tox, publicKey []byte, message string) {
+func (channel *Channel) onFriendRequest(_ *gotox.Tox, publicKey []byte, message string) {
 	if channel.callbacks != nil {
 		channel.callbacks.OnNewConnection(hex.EncodeToString(publicKey), message)
 	} else {
@@ -288,7 +306,7 @@ func (channel *Channel) onFriendRequest(t *gotox.Tox, publicKey []byte, message 
 /*
 onFriendMessage calls the appropriate callback, wrapping it sanely for our purposes.
 */
-func (channel *Channel) onFriendMessage(t *gotox.Tox, friendnumber uint32, messagetype gotox.ToxMessageType, message string) {
+func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messagetype gotox.ToxMessageType, message string) {
 	/*TODO make sensible*/
 	if messagetype == gotox.TOX_MESSAGE_TYPE_NORMAL {
 		if channel.callbacks != nil {
@@ -307,11 +325,12 @@ func (channel *Channel) onFriendMessage(t *gotox.Tox, friendnumber uint32, messa
 /*
 TODO implement and comment
 */
-func (channel *Channel) onFileRecvControl(t *gotox.Tox, friendnumber uint32, filenumber uint32, fileControl gotox.ToxFileControl) {
-	log.Printf("File control: %#+v\n", fileControl)
+func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, filenumber uint32, fileControl gotox.ToxFileControl) {
+	// we only explicitely need to handle cancel because we then have to remove resources
 	if fileControl == gotox.TOX_FILE_CONTROL_CANCEL {
 		log.Println("Transfer was canceled!")
 		// free resources
+		channel.transfers[filenumber].Close()
 		delete(channel.transfers, filenumber)
 		delete(channel.transfersFilesizes, filenumber)
 	}
@@ -320,7 +339,7 @@ func (channel *Channel) onFileRecvControl(t *gotox.Tox, friendnumber uint32, fil
 /*
 TODO implement and comment
 */
-func (channel *Channel) onFileRecv(t *gotox.Tox, friendnumber uint32, filenumber uint32, kind gotox.ToxFileKind, filesize uint64, filename string) {
+func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, filenumber uint32, kind gotox.ToxFileKind, filesize uint64, filename string) {
 	address, err := channel.addressOf(friendnumber)
 	if err != nil {
 		log.Println(err.Error())
@@ -332,7 +351,7 @@ func (channel *Channel) onFileRecv(t *gotox.Tox, friendnumber uint32, filenumber
 		return
 	}
 	// accept file send request if we come to here
-	t.FileControl(friendnumber, true, filenumber, gotox.TOX_FILE_CONTROL_RESUME, nil)
+	channel.tox.FileControl(friendnumber, true, filenumber, gotox.TOX_FILE_CONTROL_RESUME, nil)
 	// create file at correct location
 	/*TODO how are pause & resume handled?*/
 	f, _ := os.Create(path)
@@ -342,9 +361,10 @@ func (channel *Channel) onFileRecv(t *gotox.Tox, friendnumber uint32, filenumber
 }
 
 /*
-TODO implement and comment
+onFileRecvChunk is called when a chunk of a file is received. Writes the data to
+the correct file.
 */
-func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filenumber uint32, position uint64, data []byte) {
+func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filenumber uint32, position uint64, data []byte) {
 	// Write data to the hopefully valid *File handle
 	if f, exists := channel.transfers[filenumber]; exists {
 		f.WriteAt(data, (int64)(position))
@@ -375,8 +395,29 @@ func (channel *Channel) onFileRecvChunk(t *gotox.Tox, friendnumber uint32, filen
 }
 
 /*
-TODO implement and comment
+onFileChunkRequest is called when a chunk must be sent.
 */
-func (channel *Channel) onFileChunkRequest(tox *gotox.Tox, friendnumber uint32, filenumber uint32, position uint64, length uint64) {
-	log.Println("Received chunk request!")
+func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fileNumber uint32, position uint64, length uint64) {
+	size, ok := channel.transfersFilesizes[fileNumber]
+	// sanity check
+	if !ok {
+		log.Println("Failed to read from channel.transfers!")
+		return
+	}
+	// recalculate length if near end of file
+	if length+position > size {
+		length = size - position
+	}
+	// get bytes to send
+	data := make([]byte, length)
+	_, err := channel.transfers[fileNumber].ReadAt(data, int64(position))
+	if err != nil {
+		fmt.Println("Error reading file: " + err.Error())
+		return
+	}
+	// send
+	err = channel.tox.FileSendChunk(friendNumber, fileNumber, position, data)
+	if err != nil {
+		log.Println("File send error: " + err.Error())
+	}
 }
