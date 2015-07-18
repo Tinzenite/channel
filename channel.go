@@ -34,6 +34,7 @@ Create and starts a new tox channel that continously runs in the background
 until this object is destroyed.
 */
 func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) {
+	// other than name everyhting may be nil
 	if name == "" {
 		return nil, errors.New("CreateChannel called with no name!")
 	}
