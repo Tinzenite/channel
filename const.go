@@ -13,4 +13,5 @@ var (
 /*Default string values*/
 const (
 	illegalAddress = "unknown_address"
+	tag            = "Channel:"
 )

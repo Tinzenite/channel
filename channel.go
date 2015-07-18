@@ -73,6 +73,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	// Register our callbacks
 	channel.tox.CallbackFriendRequest(channel.onFriendRequest)
 	channel.tox.CallbackFriendMessage(channel.onFriendMessage)
+	channel.tox.CallbackFriendConnectionStatusChanges(channel.onFriendConnectionStatusChanges)
 	channel.tox.CallbackFileRecvControl(channel.onFileRecvControl)
 	channel.tox.CallbackFileRecv(channel.onFileRecv)
 	channel.tox.CallbackFileRecvChunk(channel.onFileRecvChunk)
@@ -328,18 +329,36 @@ func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messa
 			}
 			channel.callbacks.OnMessage(address, message)
 		} else {
-			log.Println("Error: callbacks are nil!")
+			log.Println(tag, "callbacks are nil!")
 		}
 	}
 }
 
 /*
-TODO implement and comment
+TODO comment
+*/
+func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumber uint32, connectionstatus gotox.ToxConnection) {
+	// if going offline do nothing
+	if connectionstatus == gotox.TOX_CONNECTION_NONE {
+		return
+	}
+	address, err := channel.addressOf(friendnumber)
+	if err != nil {
+		log.Println(tag, err)
+		return
+	}
+	if channel.callbacks != nil {
+		channel.callbacks.OnConnected(address)
+	}
+}
+
+/*
+TODO comment
 */
 func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, filenumber uint32, fileControl gotox.ToxFileControl) {
 	// we only explicitely need to handle cancel because we then have to remove resources
 	if fileControl == gotox.TOX_FILE_CONTROL_CANCEL {
-		log.Println("Transfer was canceled!")
+		log.Println(tag, "Transfer was canceled!")
 		// free resources
 		channel.transfers[filenumber].Close()
 		delete(channel.transfers, filenumber)
@@ -353,13 +372,13 @@ TODO implement and comment
 func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, filenumber uint32, kind gotox.ToxFileKind, filesize uint64, filename string) {
 	// we're not interested in avatars
 	if kind != gotox.TOX_FILE_KIND_DATA {
-		log.Println("Ignoring non data file transfer!")
+		log.Println(tag, "Ignoring non data file transfer!")
 		return
 	}
 	// address
 	address, err := channel.addressOf(friendnumber)
 	if err != nil {
-		log.Println(err.Error())
+		log.Println(tag, err.Error())
 		address = illegalAddress
 	}
 	// use callback to check whether to accept from Tinzenite
