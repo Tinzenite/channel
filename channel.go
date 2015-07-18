@@ -262,6 +262,14 @@ func (channel *Channel) NameOf(address string) (string, error) {
 	return name, nil
 }
 
+/*
+FormatAddress ensures that the address is lower case (not vital) and of the correct
+length (vital!).
+*/
+func (channel *Channel) FormatAddress(address string) string {
+	return strings.ToLower(address)[:64]
+}
+
 // --- private methods here ---
 
 /*
