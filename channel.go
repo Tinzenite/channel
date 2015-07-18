@@ -297,11 +297,17 @@ func (channel *Channel) addressOf(friendnumber uint32) (string, error) {
 	return hex.EncodeToString(publicKey), nil
 }
 
+// ---------------------------------CALLBACKS ----------------------------------
+
 /*
 onFriendRequest calls the appropriate callback, wrapping it sanely for our purposes.
 */
 func (channel *Channel) onFriendRequest(_ *gotox.Tox, publicKey []byte, message string) {
 	if channel.callbacks != nil {
+		// strip key of NOSPAM - this is the only instance where it is passed here
+		if len(publicKey) > 32 {
+			publicKey = publicKey[:32]
+		}
 		channel.callbacks.OnNewConnection(hex.EncodeToString(publicKey), message)
 	} else {
 		log.Println("Error: callbacks are nil!")
@@ -345,6 +351,12 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 TODO implement and comment
 */
 func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, filenumber uint32, kind gotox.ToxFileKind, filesize uint64, filename string) {
+	// we're not interested in avatars
+	if kind != gotox.TOX_FILE_KIND_DATA {
+		log.Println("Ignoring non data file transfer!")
+		return
+	}
+	// address
 	address, err := channel.addressOf(friendnumber)
 	if err != nil {
 		log.Println(err.Error())
