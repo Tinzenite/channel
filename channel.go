@@ -452,6 +452,16 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	if length+position > size {
 		length = size - position
 	}
+	// if we're done
+	if length == 0 {
+		file := channel.transfers[fileNumber]
+		file.Sync()
+		file.Close()
+		delete(channel.transfers, fileNumber)
+		delete(channel.transfersFilesizes, fileNumber)
+		// close everything and return
+		return
+	}
 	// get bytes to send
 	data := make([]byte, length)
 	_, err := channel.transfers[fileNumber].ReadAt(data, int64(position))
