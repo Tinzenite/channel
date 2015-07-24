@@ -27,6 +27,7 @@ type Channel struct {
 	stop               chan bool
 	transfers          map[uint32]*os.File
 	transfersFilesizes map[uint32]uint64
+	log                bool
 }
 
 /*
@@ -42,6 +43,9 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	var channel = &Channel{}
 	var options *gotox.Options
 	var err error
+
+	/*TODO remove, is only temp*/
+	channel.log = true
 
 	// prepare for file transfers
 	channel.transfers = make(map[uint32]*os.File)
@@ -96,6 +100,9 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.wg.Add(1)
 	channel.stop = make(chan bool, 1)
 	go channel.run()
+	if channel.log {
+		log.Println("Channel: created.")
+	}
 	return channel, nil
 }
 
@@ -114,6 +121,9 @@ func (channel *Channel) Close() {
 	// clean all file transfers
 	for _, file := range channel.transfers {
 		file.Close()
+	}
+	if channel.log {
+		log.Println("Channel: closed.")
 	}
 }
 
@@ -152,6 +162,9 @@ func (channel *Channel) Send(address, message string) error {
 	if err != nil {
 		return err
 	}
+	if channel.log {
+		log.Println("Channel: sending", "<"+message+">", "to", address, ".")
+	}
 	// returns message ID but we currently don't use it
 	_, err = channel.tox.FriendSendMessage(id, gotox.TOX_MESSAGE_TYPE_NORMAL, message)
 	return err
@@ -186,6 +199,9 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	size := uint64(stat.Size())
+	if channel.log {
+		log.Println("Channel: sending file", identification, "to", address, ".")
+	}
 	// prepare send (file will be transmitted via filechunk)
 	fileNumber, err := channel.tox.FileSend(id, gotox.TOX_FILE_KIND_DATA, size, nil, identification)
 	if err != nil {
@@ -346,6 +362,7 @@ func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messa
 TODO comment
 */
 func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumber uint32, connectionstatus gotox.ToxConnection) {
+	log.Println("channel:", "detected change")
 	// if going offline do nothing
 	if connectionstatus == gotox.TOX_CONNECTION_NONE {
 		return
@@ -357,6 +374,8 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	}
 	if channel.callbacks != nil {
 		channel.callbacks.OnConnected(address)
+	} else {
+		log.Println("No callback registered!")
 	}
 }
 
