@@ -150,7 +150,10 @@ func (channel *Channel) ToxData() ([]byte, error) {
 Send a message to the given peer address.
 */
 func (channel *Channel) Send(address, message string) error {
-	if ok, _ := channel.IsOnline(address); !ok {
+	if ok, err := channel.IsOnline(address); !ok {
+		if err != nil {
+			return err
+		}
 		return errOffline
 	}
 	// find friend id to send to
@@ -244,6 +247,9 @@ func (channel *Channel) RequestConnection(address, message string) error {
 IsOnline checks whether the given address is currently reachable.
 */
 func (channel *Channel) IsOnline(address string) (bool, error) {
+	log.Println("In", address)
+	address = channel.FormatAddress(address)
+	log.Println("Out", address)
 	publicKey, err := hex.DecodeString(address)
 	if err != nil {
 		return false, err
@@ -256,6 +262,7 @@ func (channel *Channel) IsOnline(address string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	log.Println("address found, testing for status truly")
 	return status != gotox.TOX_CONNECTION_NONE, nil
 }
 
