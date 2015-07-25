@@ -247,9 +247,11 @@ func (channel *Channel) RequestConnection(address, message string) error {
 IsOnline checks whether the given address is currently reachable.
 */
 func (channel *Channel) IsOnline(address string) (bool, error) {
-	log.Println("In", address)
-	address = channel.FormatAddress(address)
-	log.Println("Out", address)
+	// warn but try to work nonetheless
+	if len(address) != 64 {
+		log.Println(tag, "IsOnline is being called with illegal address!")
+		address = channel.FormatAddress(address)
+	}
 	publicKey, err := hex.DecodeString(address)
 	if err != nil {
 		return false, err
@@ -262,7 +264,6 @@ func (channel *Channel) IsOnline(address string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	log.Println("address found, testing for status truly")
 	return status != gotox.TOX_CONNECTION_NONE, nil
 }
 
@@ -290,6 +291,7 @@ FormatAddress ensures that the address is lower case (not vital) and of the corr
 length (vital!).
 */
 func (channel *Channel) FormatAddress(address string) string {
+	// lower case and trim
 	return strings.ToLower(address)[:64]
 }
 
@@ -310,9 +312,9 @@ func (channel *Channel) run() {
 		case <-time.Tick(intervall):
 			err := channel.tox.Iterate()
 			if err != nil {
-				// TODO what do we do here? Can we cleanly close the channel and
-				// catch the error further up?
-				log.Println(err.Error())
+				/* TODO what do we do here? Can we cleanly close the channel and
+				catch the error further up? */
+				log.Println(tag, "Run:", err)
 			}
 		} // select
 	} // for
@@ -342,7 +344,7 @@ func (channel *Channel) onFriendRequest(_ *gotox.Tox, publicKey []byte, message 
 		}
 		channel.callbacks.OnNewConnection(hex.EncodeToString(publicKey), message)
 	} else {
-		log.Println("Error: callbacks are nil!")
+		log.Println(tag, "Error: callbacks are nil!")
 	}
 }
 
@@ -369,7 +371,9 @@ func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messa
 TODO comment
 */
 func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumber uint32, connectionstatus gotox.ToxConnection) {
-	log.Println("channel:", "detected change")
+	if channel.log {
+		log.Println(tag, "detected status change")
+	}
 	// if going offline do nothing
 	if connectionstatus == gotox.TOX_CONNECTION_NONE {
 		return
@@ -382,7 +386,7 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	if channel.callbacks != nil {
 		channel.callbacks.OnConnected(address)
 	} else {
-		log.Println("No callback registered!")
+		log.Println(tag, "No callback registered!")
 	}
 }
 
@@ -471,7 +475,7 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	size, ok := channel.transfersFilesizes[fileNumber]
 	// sanity check
 	if !ok {
-		log.Println("Failed to read from channel.transfers!")
+		log.Println(tag, "Failed to read from channel.transfers!")
 		return
 	}
 	// recalculate length if near end of file
@@ -492,12 +496,12 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	data := make([]byte, length)
 	_, err := channel.transfers[fileNumber].ReadAt(data, int64(position))
 	if err != nil {
-		fmt.Println("Error reading file: " + err.Error())
+		fmt.Println(tag, "Error reading file:", err)
 		return
 	}
 	// send
 	err = channel.tox.FileSendChunk(friendNumber, fileNumber, position, data)
 	if err != nil {
-		log.Println("File send error: " + err.Error())
+		log.Println(tag, "File send error: ", err)
 	}
 }
