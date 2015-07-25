@@ -128,6 +128,18 @@ func (channel *Channel) Close() {
 }
 
 /*
+ConnectionAddress of the Tox instance. This is the address that can be used to
+send friend requests to.
+*/
+func (channel *Channel) ConnectionAddress() (string, error) {
+	address, err := channel.tox.SelfGetAddress()
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(address), nil
+}
+
+/*
 Address of the Tox instance.
 */
 func (channel *Channel) Address() (string, error) {
@@ -135,7 +147,7 @@ func (channel *Channel) Address() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.ToUpper(hex.EncodeToString(address)), nil
+	return hex.EncodeToString(address)[:64], nil
 }
 
 /*
@@ -165,9 +177,11 @@ func (channel *Channel) Send(address, message string) error {
 	if err != nil {
 		return err
 	}
-	if channel.log {
-		log.Println("Channel: sending", "<"+message+">", "to", address, ".")
-	}
+	/*
+		if channel.log {
+			log.Println("Channel: sending", "<"+message+">", "to", address, ".")
+		}
+	*/
 	// returns message ID but we currently don't use it
 	_, err = channel.tox.FriendSendMessage(id, gotox.TOX_MESSAGE_TYPE_NORMAL, message)
 	return err
@@ -202,9 +216,11 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	size := uint64(stat.Size())
-	if channel.log {
-		log.Println("Channel: sending file", identification, "to", address, ".")
-	}
+	/*
+		if channel.log {
+			log.Println("Channel: sending file", identification, "to", address, ".")
+		}
+	*/
 	// prepare send (file will be transmitted via filechunk)
 	fileNumber, err := channel.tox.FileSend(id, gotox.TOX_FILE_KIND_DATA, size, nil, identification)
 	if err != nil {
@@ -247,11 +263,6 @@ func (channel *Channel) RequestConnection(address, message string) error {
 IsOnline checks whether the given address is currently reachable.
 */
 func (channel *Channel) IsOnline(address string) (bool, error) {
-	// warn but try to work nonetheless
-	if len(address) != 64 {
-		log.Println(tag, "IsOnline is being called with illegal address!")
-		address = channel.FormatAddress(address)
-	}
 	publicKey, err := hex.DecodeString(address)
 	if err != nil {
 		return false, err
@@ -284,15 +295,6 @@ func (channel *Channel) NameOf(address string) (string, error) {
 		return "", err
 	}
 	return name, nil
-}
-
-/*
-FormatAddress ensures that the address is lower case (not vital) and of the correct
-length (vital!).
-*/
-func (channel *Channel) FormatAddress(address string) string {
-	// lower case and trim
-	return strings.ToLower(address)[:64]
 }
 
 // --- private methods here ---
@@ -357,13 +359,15 @@ func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messa
 		if channel.callbacks != nil {
 			address, err := channel.addressOf(friendnumber)
 			if err != nil {
-				log.Println(err.Error())
+				log.Println(tag, err)
 				address = illegalAddress
 			}
 			channel.callbacks.OnMessage(address, message)
 		} else {
 			log.Println(tag, "callbacks are nil!")
 		}
+	} else {
+		log.Println(tag, "Invalid message type, ignoring!")
 	}
 }
 
