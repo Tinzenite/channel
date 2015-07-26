@@ -53,10 +53,8 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 
 	// this decides whether we are initiating a new connection or using an existing one
 	if toxdata == nil {
-		options = &gotox.Options{
-			true, true,
-			gotox.TOX_PROXY_TYPE_NONE, "127.0.0.1", 5555, 0, 0, 0,
-			gotox.TOX_SAVEDATA_TYPE_NONE, nil}
+		// updated from gotox: nil options okay on first init
+		options = nil
 		init = true
 	} else {
 		options = &gotox.Options{
@@ -71,7 +69,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	}
 	if init {
 		channel.tox.SelfSetName(name)
-		channel.tox.SelfSetStatusMessage("Tin Peer")
+		channel.tox.SelfSetStatusMessage("Tinzenite Peer")
 	}
 	err = channel.tox.SelfSetStatus(gotox.TOX_USERSTATUS_NONE)
 	// Register our callbacks
@@ -429,7 +427,7 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, filenumber
 		return
 	}
 	// accept file send request if we come to here
-	channel.tox.FileControl(friendnumber, true, filenumber, gotox.TOX_FILE_CONTROL_RESUME, nil)
+	channel.tox.FileControl(friendnumber, filenumber, gotox.TOX_FILE_CONTROL_RESUME)
 	// create file at correct location
 	/*TODO how are pause & resume handled?*/
 	f, _ := os.Create(path)
