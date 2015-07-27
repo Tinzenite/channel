@@ -172,6 +172,32 @@ func (channel *Channel) Address() (string, error) {
 }
 
 /*
+OnlineAddresses returns a list of all addresses currently online.
+*/
+func (channel *Channel) OnlineAddresses() ([]string, error) {
+	friends, err := channel.tox.SelfGetFriendlist()
+	if err != nil {
+		return nil, err
+	}
+	var online []string
+	for _, friend := range friends {
+		status, err := channel.tox.FriendGetConnectionStatus(friend)
+		if err != nil {
+			return nil, err
+		}
+		if status == gotox.TOX_CONNECTION_NONE {
+			continue
+		}
+		address, err := channel.tox.FriendGetPublickey(friend)
+		if err != nil {
+			return nil, err
+		}
+		online = append(online, hex.EncodeToString(address))
+	}
+	return online, nil
+}
+
+/*
 ToxData returns the underlying current representation of the tox data. Can be
 used to store a Tox instance to disk.
 */
