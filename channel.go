@@ -21,14 +21,37 @@ instance.
 TODO all callbacks will block, need to avoid that especially when user interaction is required
 */
 type Channel struct {
-	tox                *gotox.Tox
-	callbacks          Callbacks
-	wg                 sync.WaitGroup
-	stop               chan bool
-	transfers          map[uint32]*os.File
-	transfersFilesizes map[uint32]uint64
-	log                bool
+	tox       *gotox.Tox
+	callbacks Callbacks
+	wg        sync.WaitGroup
+	stop      chan bool
+	transfers map[uint32]transfer
+	log       bool
 }
+
+/*
+transfer is the object associated to a transfer.
+*/
+type transfer struct {
+	file *os.File
+	size uint64
+	done OnDone
+}
+
+/*
+execute the done() if it exists!
+*/
+func (t *transfer) execute(success bool) {
+	if t.done != nil {
+		t.done(success)
+	}
+}
+
+/*
+OnDone is the function that is executed once the file has been sent / received.
+Can be nil.
+*/
+type OnDone func(success bool)
 
 /*
 Create and starts a new tox channel that continously runs in the background
@@ -48,8 +71,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.log = true
 
 	// prepare for file transfers
-	channel.transfers = make(map[uint32]*os.File)
-	channel.transfersFilesizes = make(map[uint32]uint64)
+	channel.transfers = make(map[uint32]transfer)
 
 	// this decides whether we are initiating a new connection or using an existing one
 	if toxdata == nil {
@@ -117,8 +139,9 @@ func (channel *Channel) Close() {
 	// kill tox
 	channel.tox.Kill()
 	// clean all file transfers
-	for _, file := range channel.transfers {
-		file.Close()
+	for _, transfer := range channel.transfers {
+		transfer.execute(false)
+		transfer.file.Close()
 	}
 	if channel.log {
 		log.Println("Channel: closed.")
@@ -186,9 +209,10 @@ func (channel *Channel) Send(address, message string) error {
 }
 
 /*
-SendFile sends a file to the given address. NOTE: Will block until done!
+SendFile starts a file transfer to the given address. Will directly begin the
+transfer!
 */
-func (channel *Channel) SendFile(address string, path string, identification string) error {
+func (channel *Channel) SendFile(address string, path string, identification string, f OnDone) error {
 	if ok, _ := channel.IsOnline(address); !ok {
 		return errOffline
 	}
@@ -225,8 +249,11 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		file.Close()
 		return err
 	}
-	channel.transfers[fileNumber] = file
-	channel.transfersFilesizes[fileNumber] = size
+	// create transfer object
+	channel.transfers[fileNumber] = transfer{
+		file: file,
+		size: size,
+		done: f}
 	return nil
 }
 
@@ -400,9 +427,8 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 	if fileControl == gotox.TOX_FILE_CONTROL_CANCEL {
 		log.Println(tag, "Transfer was canceled!")
 		// free resources
-		channel.transfers[filenumber].Close()
+		channel.transfers[filenumber].file.Close()
 		delete(channel.transfers, filenumber)
-		delete(channel.transfersFilesizes, filenumber)
 	}
 }
 
@@ -432,8 +458,10 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, filenumber
 	/*TODO how are pause & resume handled?*/
 	f, _ := os.Create(path)
 	// Append f to the map[uint8]*os.File
-	channel.transfers[filenumber] = f
-	channel.transfersFilesizes[filenumber] = filesize
+	tran := channel.transfers[filenumber]
+	tran.file = f
+	tran.size = filesize
+	channel.transfers[filenumber] = tran
 }
 
 /*
@@ -442,30 +470,33 @@ the correct file.
 */
 func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filenumber uint32, position uint64, data []byte) {
 	// Write data to the hopefully valid *File handle
-	if f, exists := channel.transfers[filenumber]; exists {
-		f.WriteAt(data, (int64)(position))
+	tran, exists := channel.transfers[filenumber]
+	if exists {
+		tran.file.WriteAt(data, (int64)(position))
 	} else {
-		log.Println("File doesn't seem to exist!")
+		log.Println("Transfer doesn't seem to exist!")
 		return
 	}
 	// this means the file has been completey received
-	if position == channel.transfersFilesizes[filenumber] {
+	if position == tran.size {
 		// ensure file is written
-		f := channel.transfers[filenumber]
-		err := f.Sync()
+		err := tran.file.Sync()
 		if err != nil {
 			log.Println("Disk error: " + err.Error())
 			return
 		}
-		pathelements := strings.Split(f.Name(), "/")
-		f.Close()
+		pathelements := strings.Split(tran.file.Name(), "/")
+		tran.file.Close()
 		// free resources
 		delete(channel.transfers, filenumber)
-		delete(channel.transfersFilesizes, filenumber)
 		// callback with file name / identification
 		address, _ := channel.addressOf(friendnumber)
 		name := pathelements[len(pathelements)-1]
 		path := "/" + strings.Join(pathelements, "/")
+		/*TODO we have 2 callbacks of a kind here.. can this be improved?*/
+		// execute done function
+		tran.execute(true)
+		// call callback
 		channel.callbacks.OnFileReceived(address, path, name)
 	}
 }
@@ -474,29 +505,28 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filen
 onFileChunkRequest is called when a chunk must be sent.
 */
 func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fileNumber uint32, position uint64, length uint64) {
-	size, ok := channel.transfersFilesizes[fileNumber]
+	trans, ok := channel.transfers[fileNumber]
 	// sanity check
 	if !ok {
 		log.Println(tag, "Failed to read from channel.transfers!")
 		return
 	}
 	// recalculate length if near end of file
-	if length+position > size {
-		length = size - position
+	if length+position > trans.size {
+		length = trans.size - position
 	}
 	// if we're done
 	if length == 0 {
-		file := channel.transfers[fileNumber]
-		file.Sync()
-		file.Close()
+		trans.file.Sync()
+		trans.file.Close()
+		trans.execute(true)
 		delete(channel.transfers, fileNumber)
-		delete(channel.transfersFilesizes, fileNumber)
 		// close everything and return
 		return
 	}
 	// get bytes to send
 	data := make([]byte, length)
-	_, err := channel.transfers[fileNumber].ReadAt(data, int64(position))
+	_, err := trans.file.ReadAt(data, int64(position))
 	if err != nil {
 		fmt.Println(tag, "Error reading file:", err)
 		return
