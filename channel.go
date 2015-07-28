@@ -175,26 +175,40 @@ func (channel *Channel) Address() (string, error) {
 OnlineAddresses returns a list of all addresses currently online.
 */
 func (channel *Channel) OnlineAddresses() ([]string, error) {
+	var onlineAddresses []string
+	addresses, err := channel.FriendAddresses()
+	if err != nil {
+		return nil, err
+	}
+	for _, address := range addresses {
+		online, err := channel.IsOnline(address)
+		if err != nil {
+			return nil, err
+		}
+		if online {
+			onlineAddresses = append(onlineAddresses, address)
+		}
+	}
+	return onlineAddresses, nil
+}
+
+/*
+FriendAddresses returns a list of addresses of all friends.
+*/
+func (channel *Channel) FriendAddresses() ([]string, error) {
 	friends, err := channel.tox.SelfGetFriendlist()
 	if err != nil {
 		return nil, err
 	}
-	var online []string
+	var addresses []string
 	for _, friend := range friends {
-		status, err := channel.tox.FriendGetConnectionStatus(friend)
-		if err != nil {
-			return nil, err
-		}
-		if status == gotox.TOX_CONNECTION_NONE {
-			continue
-		}
 		address, err := channel.tox.FriendGetPublickey(friend)
 		if err != nil {
 			return nil, err
 		}
-		online = append(online, hex.EncodeToString(address))
+		addresses = append(addresses, hex.EncodeToString(address))
 	}
-	return online, nil
+	return addresses, nil
 }
 
 /*
