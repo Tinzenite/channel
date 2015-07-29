@@ -68,13 +68,14 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	var err error
 
 	/*TODO remove, is only temp*/
-	channel.log = true
+	channel.log = false
 
 	// prepare for file transfers
 	channel.transfers = make(map[uint32]transfer)
 
 	// this decides whether we are initiating a new connection or using an existing one
 	if toxdata == nil {
+		log.Println("Channel:", "WARNING create called with empty ToxData.")
 		// updated from gotox: nil options okay on first init
 		options = nil
 		init = true
