@@ -533,7 +533,7 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filen
 		// callback with file name / identification
 		address, _ := channel.addressOf(friendnumber)
 		name := pathelements[len(pathelements)-1]
-		path := "/" + strings.Join(pathelements, "/")
+		path := strings.Join(pathelements, "/")
 		/*TODO we have 2 callbacks of a kind here.. can this be improved?*/
 		// execute done function
 		tran.execute(true)
