@@ -326,6 +326,22 @@ func (channel *Channel) RequestConnection(address, message string) error {
 }
 
 /*
+RemoveConnection removes a friend from the friendlist, effectivly terminating
+the connection.
+*/
+func (channel *Channel) RemoveConnection(address string) error {
+	publicKey, err := hex.DecodeString(address)
+	if err != nil {
+		return err
+	}
+	num, err := channel.tox.FriendByPublicKey(publicKey)
+	if err != nil {
+		return err
+	}
+	return channel.tox.FriendDelete(num)
+}
+
+/*
 IsOnline checks whether the given address is currently reachable.
 */
 func (channel *Channel) IsOnline(address string) (bool, error) {
