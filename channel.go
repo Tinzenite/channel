@@ -133,8 +133,10 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 Close shuts down the channel.
 */
 func (channel *Channel) Close() {
+	// TODO DEBUG NOTE DEBUG
+	log.Println("DEBUG: TODO debug why won't close! Implement timeout?")
 	// send stop signal
-	channel.stop <- false
+	channel.stop <- true
 	// wait for it to close
 	channel.wg.Wait()
 	// kill tox
@@ -391,7 +393,9 @@ func (channel *Channel) run() {
 		intervall := time.Duration(temp) * time.Millisecond
 		select {
 		case <-channel.stop:
+			log.Println(tag, "Stopping background process!")
 			channel.wg.Done()
+			log.Println("Stopped!")
 			return
 		case <-time.Tick(intervall):
 			err := channel.tox.Iterate()
