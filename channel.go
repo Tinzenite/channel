@@ -568,23 +568,15 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	trans, exists := channel.transfers[fileNumber]
 	// sanity check
 	if !exists {
-		log.Println(tag, "Failed to read from channel.transfers!")
+		log.Println(tag, "Failed to read", fileNumber, "from channel.transfers!")
 		return
 	}
-	// recalculate length if near end of file
-	if length+position > trans.size {
-		length = trans.size - position
-	}
-	// if we're done
-	/* TODO FIXME this doesn't catch files that fit within a single chunk! */
+	// if we're already done we finish here without sending any more chunks
 	if length == 0 {
-		trans.file.Sync()
-		trans.file.Close()
-		trans.execute(true)
-		delete(channel.transfers, fileNumber)
-		// close everything and return
+		channel.sendingFileDone(fileNumber)
 		return
 	}
+	log.Println("sending", fileNumber)
 	// get bytes to send
 	data := make([]byte, length)
 	_, err := trans.file.ReadAt(data, int64(position))
@@ -597,4 +589,25 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	if err != nil {
 		log.Println(tag, "File send error: ", err)
 	}
+	// check if this was the last chunk, if yes --> transfer done
+	if length+position >= trans.size {
+		log.Println("This was the last chunk, done!")
+		channel.sendingFileDone(fileNumber)
+		return
+	}
+}
+
+// TODO FIXME rewrite as transfer.method()? and call everywhere accordingly
+func (channel *Channel) sendingFileDone(fileNumber uint32) {
+	trans, exists := channel.transfers[fileNumber]
+	// sanity check
+	if !exists {
+		log.Println("DEBUG: Failed here!")
+		return
+	}
+	log.Println("Done with", fileNumber, "outstanding:", len(channel.transfers))
+	trans.file.Sync()
+	trans.file.Close()
+	trans.execute(true)
+	delete(channel.transfers, fileNumber)
 }
