@@ -279,11 +279,6 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	size := uint64(stat.Size())
-	/*
-		if channel.log {
-			log.Println("Channel: sending file", identification, "to", address, ".")
-		}
-	*/
 	// prepare send (file will be transmitted via filechunk)
 	fileNumber, err := channel.tox.FileSend(id, gotox.TOX_FILE_KIND_DATA, size, nil, identification)
 	if err != nil {
@@ -295,6 +290,8 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		file: file,
 		size: size,
 		done: f}
+	// TODO HERE FIXME NOTE
+	log.Println("DEBUG: opened transfer:", fileNumber)
 	return nil
 }
 
@@ -493,7 +490,7 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 /*
 TODO implement and comment
 */
-func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, filenumber uint32, kind gotox.ToxFileKind, filesize uint64, filename string) {
+func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber uint32, kind gotox.ToxFileKind, filesize uint64, filename string) {
 	// we're not interested in avatars
 	if kind != gotox.TOX_FILE_KIND_DATA {
 		log.Println(tag, "Ignoring non data file transfer!")
@@ -510,25 +507,25 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, filenumber
 	if !accept {
 		return
 	}
-	// accept file send request if we come to here
-	channel.tox.FileControl(friendnumber, filenumber, gotox.TOX_FILE_CONTROL_RESUME)
 	// create file at correct location
 	/*TODO how are pause & resume handled?*/
 	f, _ := os.Create(path)
-	// Append f to the map[uint8]*os.File
-	tran := channel.transfers[filenumber]
-	tran.file = f
-	tran.size = filesize
-	channel.transfers[filenumber] = tran
+	// create transfer object
+	channel.transfers[fileNumber] = transfer{
+		file: f,
+		size: filesize,
+		done: nil}
+	// accept file send request if we come to here
+	channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_RESUME)
 }
 
 /*
 onFileRecvChunk is called when a chunk of a file is received. Writes the data to
 the correct file.
 */
-func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filenumber uint32, position uint64, data []byte) {
+func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileNumber uint32, position uint64, data []byte) {
 	// Write data to the hopefully valid *File handle
-	tran, exists := channel.transfers[filenumber]
+	tran, exists := channel.transfers[fileNumber]
 	if exists {
 		tran.file.WriteAt(data, (int64)(position))
 	} else {
@@ -546,7 +543,7 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filen
 		pathelements := strings.Split(tran.file.Name(), "/")
 		tran.file.Close()
 		// free resources
-		delete(channel.transfers, filenumber)
+		delete(channel.transfers, fileNumber)
 		// callback with file name / identification
 		address, _ := channel.addressOf(friendnumber)
 		name := pathelements[len(pathelements)-1]
@@ -563,9 +560,9 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, filen
 onFileChunkRequest is called when a chunk must be sent.
 */
 func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fileNumber uint32, position uint64, length uint64) {
-	trans, ok := channel.transfers[fileNumber]
+	trans, exists := channel.transfers[fileNumber]
 	// sanity check
-	if !ok {
+	if !exists {
 		log.Println(tag, "Failed to read from channel.transfers!")
 		return
 	}
@@ -579,6 +576,8 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 		trans.file.Close()
 		trans.execute(true)
 		delete(channel.transfers, fileNumber)
+		// TODO REMOVE ME AGAIN!
+		log.Println("DEBUG: closing send transfer:", fileNumber)
 		// close everything and return
 		return
 	}
