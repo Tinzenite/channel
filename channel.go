@@ -81,9 +81,16 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 		init = true
 	} else {
 		options = &gotox.Options{
-			true, true,
-			gotox.TOX_PROXY_TYPE_NONE, "127.0.0.1", 5555, 0, 0, 0,
-			gotox.TOX_SAVEDATA_TYPE_TOX_SAVE, toxdata}
+			IPv6Enabled:  true,
+			UDPEnabled:   true,
+			ProxyType:    gotox.TOX_PROXY_TYPE_NONE,
+			ProxyHost:    "127.0.0.1",
+			ProxyPort:    5555,
+			StartPort:    0,
+			EndPort:      0,
+			TcpPort:      0,
+			SaveDataType: gotox.TOX_SAVEDATA_TYPE_TOX_SAVE,
+			SaveData:     toxdata}
 		init = false
 	}
 	channel.tox, err = gotox.New(options)
@@ -290,8 +297,6 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		file: file,
 		size: size,
 		done: f}
-	// TODO HERE FIXME NOTE
-	log.Println("DEBUG: opened transfer:", fileNumber)
 	return nil
 }
 
@@ -571,13 +576,12 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 		length = trans.size - position
 	}
 	// if we're done
+	/* TODO FIXME this doesn't catch files that fit within a single chunk! */
 	if length == 0 {
 		trans.file.Sync()
 		trans.file.Close()
 		trans.execute(true)
 		delete(channel.transfers, fileNumber)
-		// TODO REMOVE ME AGAIN!
-		log.Println("DEBUG: closing send transfer:", fileNumber)
 		// close everything and return
 		return
 	}
