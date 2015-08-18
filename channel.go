@@ -119,7 +119,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.callbacks = callbacks
 	// now to run it:
 	channel.wg.Add(1)
-	channel.stop = make(chan bool, 1)
+	channel.stop = make(chan bool, 0)
 	go channel.run()
 	if channel.log {
 		log.Println("Channel: created.")
@@ -133,8 +133,6 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 Close shuts down the channel.
 */
 func (channel *Channel) Close() {
-	// TODO DEBUG NOTE DEBUG
-	log.Println("DEBUG: TODO debug why won't close! Implement timeout?")
 	// send stop signal
 	channel.stop <- true
 	// wait for it to close
@@ -147,7 +145,7 @@ func (channel *Channel) Close() {
 		transfer.file.Close()
 	}
 	if channel.log {
-		log.Println("Channel: closed.")
+		log.Println(tag, "Closed.")
 	}
 }
 
@@ -388,14 +386,13 @@ run is the background go routine method that keeps the Tox instance iterating
 until Close() is called.
 */
 func (channel *Channel) run() {
+	defer func() { log.Println(tag, "Background process stopped.") }()
 	for {
 		temp, _ := channel.tox.IterationInterval()
 		intervall := time.Duration(temp) * time.Millisecond
 		select {
 		case <-channel.stop:
-			log.Println(tag, "Stopping background process!")
 			channel.wg.Done()
-			log.Println("Stopped!")
 			return
 		case <-time.Tick(intervall):
 			err := channel.tox.Iterate()
