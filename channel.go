@@ -530,7 +530,7 @@ onFileRecvChunk is called when a chunk of a file is received. Writes the data to
 the correct file.
 */
 func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileNumber uint32, position uint64, data []byte) {
-	log.Println("Received chunk!")
+	log.Println("Received chunk!", fileNumber)
 	tran, exists := channel.transfers[fileNumber]
 	if !exists {
 		// ignore zero length chunk that is sent to signal a complete transfer
