@@ -466,9 +466,14 @@ TODO comment
 func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, filenumber uint32, fileControl gotox.ToxFileControl) {
 	// we only explicitely need to handle cancel because we then have to remove resources
 	if fileControl == gotox.TOX_FILE_CONTROL_CANCEL {
+		trans, exists := channel.transfers[filenumber]
+		if !exists {
+			// if it doesn't exist, ignore!
+			return
+		}
 		log.Println(tag, "Transfer was canceled!")
 		// free resources
-		channel.transfers[filenumber].file.Close()
+		trans.Close(false)
 		delete(channel.transfers, filenumber)
 	}
 }
