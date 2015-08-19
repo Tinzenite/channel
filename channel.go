@@ -92,17 +92,26 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.tox.CallbackFileRecv(channel.onFileRecv)
 	channel.tox.CallbackFileRecvChunk(channel.onFileRecvChunk)
 	channel.tox.CallbackFileChunkRequest(channel.onFileChunkRequest)
-	// some things must only be done if first start
-	if init {
-		// Bootstrap
-		toxNode, err := toxdynboot.FetchFirstAlive(200 * time.Millisecond)
+	// always bootstrap
+	toxNodes, err := toxdynboot.FetchAlive(200 * time.Millisecond)
+	if err != nil {
+		return nil, err
+	}
+	if channel.log {
+		log.Println(tag, "Bootstrapping to", len(toxNodes), "nodes.")
+	}
+	var anySuccessful bool
+	for _, node := range toxNodes {
+		err = channel.tox.Bootstrap(node.IPv4, node.Port, node.PublicKey)
 		if err != nil {
-			return nil, err
+			log.Println(tag, "Bootstrap error for a node:", err)
+		} else {
+			anySuccessful = true
 		}
-		err = channel.tox.Bootstrap(toxNode.IPv4, toxNode.Port, toxNode.PublicKey)
-		if err != nil {
-			return nil, err
-		}
+	}
+	// if we didn't manage to bootstrap to any node, no sense in continuing
+	if !anySuccessful {
+		return nil, errBootstrap
 	}
 	// register callbacks
 	channel.callbacks = callbacks
@@ -129,7 +138,6 @@ func (channel *Channel) Close() {
 	// kill tox
 	channel.tox.Kill()
 	// clean all file transfers
-	log.Println("tag", "Closing", len(channel.transfers), "existing transfers.")
 	for _, transfer := range channel.transfers {
 		transfer.Close(false)
 	}
@@ -523,7 +531,6 @@ onFileRecvChunk is called when a chunk of a file is received. Writes the data to
 the correct file.
 */
 func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileNumber uint32, position uint64, data []byte) {
-	log.Println("Received chunk!", fileNumber)
 	tran, exists := channel.transfers[fileNumber]
 	if !exists {
 		// ignore zero length chunk that is sent to signal a complete transfer
