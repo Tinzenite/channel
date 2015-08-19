@@ -147,6 +147,7 @@ func (channel *Channel) Close() {
 	// kill tox
 	channel.tox.Kill()
 	// clean all file transfers
+	log.Println("tag", "Closing", len(channel.transfers), "existing transfers.")
 	for _, transfer := range channel.transfers {
 		transfer.execute(false)
 		transfer.file.Close()
@@ -529,11 +530,9 @@ onFileRecvChunk is called when a chunk of a file is received. Writes the data to
 the correct file.
 */
 func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileNumber uint32, position uint64, data []byte) {
-	// Write data to the hopefully valid *File handle
+	log.Println("Received chunk!")
 	tran, exists := channel.transfers[fileNumber]
-	if exists {
-		tran.file.WriteAt(data, (int64)(position))
-	} else {
+	if !exists {
 		// ignore zero length chunk that is sent to signal a complete transfer
 		if len(data) == 0 {
 			return
@@ -541,6 +540,8 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 		log.Println("Transfer doesn't seem to exist!")
 		return
 	}
+	// write date to disk
+	tran.file.WriteAt(data, (int64)(position))
 	// this means the file has been completey received
 	if position+uint64(len(data)) >= tran.size {
 		// ensure file is written
