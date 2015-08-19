@@ -485,6 +485,8 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 	// we're not interested in avatars
 	if kind != gotox.TOX_FILE_KIND_DATA {
 		log.Println(tag, "Ignoring non data file transfer!")
+		// send cancel so that the other client knows that we blocked it
+		channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_CANCEL)
 		return
 	}
 	// address
