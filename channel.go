@@ -129,6 +129,7 @@ func (channel *Channel) Close() {
 	// kill tox
 	channel.tox.Kill()
 	// clean all file transfers
+	log.Println("tag", "Closing", len(channel.transfers), "existing transfers.")
 	for _, transfer := range channel.transfers {
 		transfer.Close(false)
 	}
@@ -378,7 +379,12 @@ func (channel *Channel) run() {
 			channel.wg.Done()
 			return
 		case <-time.Tick(intervall):
+			start := time.Now()
 			err := channel.tox.Iterate()
+			duration := time.Since(start)
+			if duration > intervall/2 {
+				log.Println("Channel: WARNING: iterate blocks!", duration, "from", intervall)
+			}
 			if err != nil {
 				/* TODO what do we do here? Can we cleanly close the channel and
 				catch the error further up? */
@@ -517,16 +523,20 @@ onFileRecvChunk is called when a chunk of a file is received. Writes the data to
 the correct file.
 */
 func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileNumber uint32, position uint64, data []byte) {
-	// Write data to the hopefully valid *File handle
+	log.Println("Received chunk!", fileNumber)
 	tran, exists := channel.transfers[fileNumber]
-	if exists {
-		tran.file.WriteAt(data, (int64)(position))
-	} else {
+	if !exists {
+		// ignore zero length chunk that is sent to signal a complete transfer
+		if len(data) == 0 {
+			return
+		}
 		log.Println("Transfer doesn't seem to exist!")
 		return
 	}
+	// write date to disk
+	tran.file.WriteAt(data, (int64)(position))
 	// this means the file has been completey received
-	if position == tran.size {
+	if position+uint64(len(data)) >= tran.size {
 		pathelements := strings.Split(tran.file.Name(), "/")
 		// callback with file name / identification
 		address, _ := channel.addressOf(friendnumber)
@@ -550,6 +560,10 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 		log.Println(tag, "Failed to read", fileNumber, "from channel.transfers!")
 		return
 	}
+	// ensure that length is valid
+	if length+position > trans.size {
+		length = trans.size - position
+	}
 	// if we're already done we finish here without sending any more chunks
 	if length == 0 {
 		trans.Close(true)
@@ -567,11 +581,5 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	err = channel.tox.FileSendChunk(friendNumber, fileNumber, position, data)
 	if err != nil {
 		log.Println(tag, "File send error: ", err)
-	}
-	// check if this was the last chunk, if yes --> transfer done
-	if length+position >= trans.size {
-		trans.Close(true)
-		delete(channel.transfers, fileNumber)
-		// return
 	}
 }
