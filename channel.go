@@ -30,24 +30,6 @@ type Channel struct {
 }
 
 /*
-transfer is the object associated to a transfer.
-*/
-type transfer struct {
-	file *os.File
-	size uint64
-	done OnDone
-}
-
-/*
-execute the done() if it exists!
-*/
-func (t *transfer) execute(success bool) {
-	if t.done != nil {
-		t.done(success)
-	}
-}
-
-/*
 OnDone is the function that is executed once the file has been sent / received.
 Can be nil.
 */
@@ -148,8 +130,7 @@ func (channel *Channel) Close() {
 	channel.tox.Kill()
 	// clean all file transfers
 	for _, transfer := range channel.transfers {
-		transfer.execute(false)
-		transfer.file.Close()
+		transfer.Close(false)
 	}
 	if channel.log {
 		log.Println(tag, "Closed.")
@@ -539,23 +520,14 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 	}
 	// this means the file has been completey received
 	if position == tran.size {
-		// ensure file is written
-		err := tran.file.Sync()
-		if err != nil {
-			log.Println("Disk error: " + err.Error())
-			return
-		}
 		pathelements := strings.Split(tran.file.Name(), "/")
-		tran.file.Close()
-		// free resources
-		delete(channel.transfers, fileNumber)
 		// callback with file name / identification
 		address, _ := channel.addressOf(friendnumber)
 		name := pathelements[len(pathelements)-1]
 		path := strings.Join(pathelements, "/")
-		/*TODO we have 2 callbacks of a kind here.. can this be improved?*/
-		// execute done function
-		tran.execute(true)
+		// finish transfer
+		tran.Close(true)
+		delete(channel.transfers, fileNumber)
 		// call callback
 		channel.callbacks.OnFileReceived(address, path, name)
 	}
@@ -573,10 +545,10 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	}
 	// if we're already done we finish here without sending any more chunks
 	if length == 0 {
-		channel.sendingFileDone(fileNumber)
+		trans.Close(true)
+		delete(channel.transfers, fileNumber)
 		return
 	}
-	log.Println("sending", fileNumber)
 	// get bytes to send
 	data := make([]byte, length)
 	_, err := trans.file.ReadAt(data, int64(position))
@@ -591,23 +563,8 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	}
 	// check if this was the last chunk, if yes --> transfer done
 	if length+position >= trans.size {
-		log.Println("This was the last chunk, done!")
-		channel.sendingFileDone(fileNumber)
-		return
+		trans.Close(true)
+		delete(channel.transfers, fileNumber)
+		// return
 	}
-}
-
-// TODO FIXME rewrite as transfer.method()? and call everywhere accordingly
-func (channel *Channel) sendingFileDone(fileNumber uint32) {
-	trans, exists := channel.transfers[fileNumber]
-	// sanity check
-	if !exists {
-		log.Println("DEBUG: Failed here!")
-		return
-	}
-	log.Println("Done with", fileNumber, "outstanding:", len(channel.transfers))
-	trans.file.Sync()
-	trans.file.Close()
-	trans.execute(true)
-	delete(channel.transfers, fileNumber)
 }
