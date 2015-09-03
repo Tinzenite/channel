@@ -93,7 +93,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.tox.CallbackFileRecvChunk(channel.onFileRecvChunk)
 	channel.tox.CallbackFileChunkRequest(channel.onFileChunkRequest)
 	// always bootstrap
-	toxNodes, err := toxdynboot.FetchAlive(200 * time.Millisecond)
+	toxNodes, err := toxdynboot.FetchAlive(1 * time.Second)
 	if err != nil {
 		return nil, err
 	}
