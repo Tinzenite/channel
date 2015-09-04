@@ -380,19 +380,14 @@ until Close() is called.
 func (channel *Channel) run() {
 	defer func() { log.Println(tag, "Background process stopped.") }()
 	for {
-		temp, _ := channel.tox.IterationInterval()
-		intervall := time.Duration(temp) * time.Millisecond
+		intervall, _ := channel.tox.IterationInterval()
+		ticker := time.Tick(time.Duration(intervall) * time.Millisecond)
 		select {
 		case <-channel.stop:
 			channel.wg.Done()
 			return
-		case <-time.Tick(intervall):
-			start := time.Now()
+		case <-ticker:
 			err := channel.tox.Iterate()
-			duration := time.Since(start)
-			if duration > intervall/2 {
-				log.Println("Channel: WARNING: iterate blocks!", duration, "from", intervall)
-			}
 			if err != nil {
 				/* TODO what do we do here? Can we cleanly close the channel and
 				catch the error further up? */
