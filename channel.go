@@ -92,27 +92,6 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.tox.CallbackFileRecv(channel.onFileRecv)
 	channel.tox.CallbackFileRecvChunk(channel.onFileRecvChunk)
 	channel.tox.CallbackFileChunkRequest(channel.onFileChunkRequest)
-	// always bootstrap
-	toxNodes, err := toxdynboot.FetchAlive(1 * time.Second)
-	if err != nil {
-		return nil, err
-	}
-	if channel.log {
-		log.Println(tag, "Bootstrapping to", len(toxNodes), "nodes.")
-	}
-	var anySuccessful bool
-	for _, node := range toxNodes {
-		err = channel.tox.Bootstrap(node.IPv4, node.Port, node.PublicKey)
-		if err != nil {
-			log.Println(tag, "Bootstrap error for a node:", err)
-		} else {
-			anySuccessful = true
-		}
-	}
-	// if we didn't manage to bootstrap to any node, no sense in continuing
-	if !anySuccessful {
-		return nil, errBootstrap
-	}
 	// register callbacks
 	channel.callbacks = callbacks
 	// now to run it:
@@ -378,21 +357,85 @@ run is the background go routine method that keeps the Tox instance iterating
 until Close() is called.
 */
 func (channel *Channel) run() {
+	// log when stopping background process
 	defer func() { log.Println(tag, "Background process stopped.") }()
+	err := channel.bootstrap()
+	// if bootstrap returned an error we can't run, so return
+	if err != nil {
+		log.Println(tag, "Couldn't bootstrap Tox:", err)
+		return
+	}
+	// TODO: how to use tox.GetIterationIntervall to update ticker without performance loss?
+	// NOTE: for now: just tick every 50ms
+	ticker := time.Tick(50 * time.Millisecond)
+	// endless loop until close is called for tox.Iterate
 	for {
-		intervall, _ := channel.tox.IterationInterval()
-		ticker := time.Tick(time.Duration(intervall) * time.Millisecond)
+		// select whether we have to close or just iterate
 		select {
 		case <-channel.stop:
+			// close wg and return (we're done)
 			channel.wg.Done()
 			return
 		case <-ticker:
+			// try to iterate
 			err := channel.tox.Iterate()
 			if err != nil {
-				/* TODO what do we do here? Can we cleanly close the channel and
-				catch the error further up? */
 				log.Println(tag, "Run:", err)
 			}
+		} // select
+	} // for
+}
+
+/*
+bootstrap will return nil when successfully connected to the Tox network. If it
+returns an error something went really wrong.
+*/
+func (channel *Channel) bootstrap() error {
+	// fetch bootstrap nodes
+	toxNodes, err := toxdynboot.FetchAlive(1 * time.Second)
+	if err != nil {
+		return err
+	}
+	// warn if less than 5 ToxNodes (even 0)
+	if len(toxNodes) < 5 {
+		log.Println(tag, "WARNING: Too few ToxNodes!", len(toxNodes), " ToxNodes found.")
+	}
+	// initially while trying to bootstrap keep trying every 5 seconds
+	bootTicker := time.Tick(5 * time.Second)
+	// keep tox iterating
+	iterTicker := time.Tick(50 * time.Millisecond)
+	// endlessly try to bootstrap until successful
+	for {
+		select {
+		case <-channel.stop:
+			// close wg and return (we're done)
+			channel.wg.Done()
+			return errors.New("quit")
+		case <-bootTicker:
+			// while not connected to the network keep trying to bootstrap
+			status, err := channel.tox.SelfGetConnectionStatus()
+			if err != nil {
+				log.Println(tag, "Failed to read own connection status!")
+				// try again next time
+				continue
+			}
+			// try to bootstrap to all nodes
+			for _, node := range toxNodes {
+				err := channel.tox.Bootstrap(node.IPv4, node.Port, node.PublicKey)
+				if err != nil {
+					log.Println(tag, "Bootstrap error for a node:", err)
+				}
+			} // for
+			if status != gotox.TOX_CONNECTION_NONE {
+				// log success
+				if channel.log {
+					log.Println(tag, "Bootstrapped successfully.")
+				}
+				return nil
+			}
+			log.Println("DEBUG: Not yet bootstrapped...")
+		case <-iterTicker:
+			_ = channel.tox.Iterate()
 		} // select
 	} // for
 }
