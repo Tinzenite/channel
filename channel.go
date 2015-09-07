@@ -49,9 +49,6 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	var options *gotox.Options
 	var err error
 
-	/*TODO remove, is only temp*/
-	channel.log = false
-
 	// prepare for file transfers
 	channel.transfers = make(map[uint32]transfer)
 
@@ -79,6 +76,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	if err != nil {
 		return nil, err
 	}
+	// if init, AFTER creating the tox instance, set these
 	if init {
 		channel.tox.SelfSetName(name)
 		channel.tox.SelfSetStatusMessage("Tinzenite Peer")
@@ -158,7 +156,7 @@ func (channel *Channel) OnlineAddresses() ([]string, error) {
 		return nil, err
 	}
 	for _, address := range addresses {
-		online, err := channel.IsOnline(address)
+		online, err := channel.IsAddressOnline(address)
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +198,7 @@ func (channel *Channel) ToxData() ([]byte, error) {
 Send a message to the given peer address.
 */
 func (channel *Channel) Send(address, message string) error {
-	if ok, err := channel.IsOnline(address); !ok {
+	if ok, err := channel.IsAddressOnline(address); !ok {
 		if err != nil {
 			return err
 		}
@@ -230,7 +228,7 @@ SendFile starts a file transfer to the given address. Will directly begin the
 transfer!
 */
 func (channel *Channel) SendFile(address string, path string, identification string, f OnDone) error {
-	if ok, _ := channel.IsOnline(address); !ok {
+	if ok, _ := channel.IsAddressOnline(address); !ok {
 		return errOffline
 	}
 	// find friend id to send to
@@ -313,9 +311,9 @@ func (channel *Channel) RemoveConnection(address string) error {
 }
 
 /*
-IsOnline checks whether the given address is currently reachable.
+IsAddressOnline checks whether the given address is currently reachable.
 */
-func (channel *Channel) IsOnline(address string) (bool, error) {
+func (channel *Channel) IsAddressOnline(address string) (bool, error) {
 	publicKey, err := hex.DecodeString(address)
 	if err != nil {
 		return false, err
@@ -350,6 +348,20 @@ func (channel *Channel) NameOf(address string) (string, error) {
 	return name, nil
 }
 
+/*
+IsOnline referes to the connection status of the channel.
+*/
+func (channel *Channel) IsOnline() (bool, error) {
+	status, err := channel.tox.SelfGetConnectionStatus()
+	if err != nil {
+		return false, err
+	}
+	if status != gotox.TOX_CONNECTION_NONE {
+		return true, nil
+	}
+	return false, nil
+}
+
 // --- private methods here ---
 
 /*
@@ -357,87 +369,50 @@ run is the background go routine method that keeps the Tox instance iterating
 until Close() is called.
 */
 func (channel *Channel) run() {
-	// log when stopping background process
+	// log when stopping background process (even if returning error)
 	defer func() { log.Println(tag, "Background process stopped.") }()
-	err := channel.bootstrap()
-	// if bootstrap returned an error we can't run, so return
-	if err != nil {
-		log.Println(tag, "Couldn't bootstrap Tox:", err)
-		return
-	}
-	// TODO: how to use tox.GetIterationIntervall to update ticker without performance loss?
-	// NOTE: for now: just tick every 50ms
-	ticker := time.Tick(50 * time.Millisecond)
-	// endless loop until close is called for tox.Iterate
-	for {
-		// select whether we have to close or just iterate
-		select {
-		case <-channel.stop:
-			// close wg and return (we're done)
-			channel.wg.Done()
-			return
-		case <-ticker:
-			// try to iterate
-			err := channel.tox.Iterate()
-			if err != nil {
-				log.Println(tag, "Run:", err)
-			}
-		} // select
-	} // for
-}
-
-/*
-bootstrap will return nil when successfully connected to the Tox network. If it
-returns an error something went really wrong.
-*/
-func (channel *Channel) bootstrap() error {
-	// fetch bootstrap nodes
+	// read ToxNodes
 	toxNodes, err := toxdynboot.FetchAlive(1 * time.Second)
 	if err != nil {
-		return err
+		log.Println(tag, "Fetching ToxNodes for Tox failed!", err)
 	}
 	// warn if less than 5 ToxNodes (even 0)
 	if len(toxNodes) < 5 {
 		log.Println(tag, "WARNING: Too few ToxNodes!", len(toxNodes), " ToxNodes found.")
 	}
-	// initially while trying to bootstrap keep trying every 5 seconds
-	bootTicker := time.Tick(5 * time.Second)
-	// keep tox iterating
-	iterTicker := time.Tick(50 * time.Millisecond)
-	// endlessly try to bootstrap until successful
+	// TODO: how to use tox.GetIterationIntervall to update ticker without performance loss? For now: just tick every 50ms
+	iterateTicker := time.Tick(50 * time.Millisecond)
+	// we check if we have to bootstrap every 10 seconds (this will allow clean reconnect if we ever loose internet)
+	bootTicker := time.Tick(10 * time.Second) // FIXME: if first start we can bootstrap every 5 seconds until connected
+	// endless loop until close is called for tox.Iterate
 	for {
+		// select whether we have to close, iterate, or check online status
 		select {
 		case <-channel.stop:
 			// close wg and return (we're done)
 			channel.wg.Done()
-			return errors.New("quit")
-		case <-bootTicker:
-			// while not connected to the network keep trying to bootstrap
-			status, err := channel.tox.SelfGetConnectionStatus()
+			return
+		case <-iterateTicker:
+			// try to iterate
+			err := channel.tox.Iterate()
 			if err != nil {
-				log.Println(tag, "Failed to read own connection status!")
-				// try again next time
-				continue
+				log.Println(tag, "Run:", err)
 			}
-			// try to bootstrap to all nodes
+		case <-bootTicker:
+			// don't bootstrap if channel is online
+			online, _ := channel.IsOnline()
+			if online {
+				break
+			}
+			// try to bootstrap to all nodes. Better: random set of 4 nodes, but meh.
 			for _, node := range toxNodes {
 				err := channel.tox.Bootstrap(node.IPv4, node.Port, node.PublicKey)
 				if err != nil {
 					log.Println(tag, "Bootstrap error for a node:", err)
 				}
-			} // for
-			if status != gotox.TOX_CONNECTION_NONE {
-				// log success
-				if channel.log {
-					log.Println(tag, "Bootstrapped successfully.")
-				}
-				return nil
-			}
-			log.Println("DEBUG: Not yet bootstrapped...")
-		case <-iterTicker:
-			_ = channel.tox.Iterate()
+			} // bootstrap for
 		} // select
-	} // for
+	} // endless for
 }
 
 /*
