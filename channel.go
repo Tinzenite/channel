@@ -25,7 +25,7 @@ type Channel struct {
 	callbacks Callbacks
 	wg        sync.WaitGroup
 	stop      chan bool
-	transfers map[uint32]transfer
+	transfers map[uint32]*transfer
 	log       bool
 }
 
@@ -50,7 +50,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	var err error
 
 	// prepare for file transfers
-	channel.transfers = make(map[uint32]transfer)
+	channel.transfers = make(map[uint32]*transfer)
 
 	// this decides whether we are initiating a new connection or using an existing one
 	if toxdata == nil {
@@ -247,7 +247,7 @@ func (channel *Channel) SendFile(address string, path string, identification str
 	}
 	// do NOT close file! must be done elsewhere since we may need it later
 	// get file size
-	stat, err := os.Lstat(path)
+	stat, err := file.Stat()
 	if err != nil {
 		file.Close()
 		return err
@@ -260,10 +260,7 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = transfer{
-		file: file,
-		size: size,
-		done: f}
+	channel.transfers[fileNumber] = createTransfer(file, f)
 	return nil
 }
 
@@ -528,13 +525,13 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		return
 	}
 	// create file at correct location
-	/*TODO how are pause & resume handled?*/
-	f, _ := os.Create(path)
+	/*TODO how are pause & resume handled? FIXME*/
+	f, err := os.Create(path)
+	if err != nil {
+		log.Println(tag, "Creating file to write receival of data to failed!", err)
+	}
 	// create transfer object
-	channel.transfers[fileNumber] = transfer{
-		file: f,
-		size: filesize,
-		done: nil}
+	channel.transfers[fileNumber] = createTransfer(f, nil)
 	// accept file send request if we come to here
 	channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_RESUME)
 }
