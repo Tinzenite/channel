@@ -485,7 +485,7 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 }
 
 /*
-TODO comment
+onFileRecvControl is called when a file control packet is received.
 */
 func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, filenumber uint32, fileControl gotox.ToxFileControl) {
 	// we only explicitely need to handle cancel because we then have to remove resources
@@ -503,7 +503,8 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 }
 
 /*
-TODO implement and comment
+onFileRecv is called when a file transfer is to be opened. Will prepare the file
+for reception of chunks.
 */
 func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber uint32, kind gotox.ToxFileKind, filesize uint64, filename string) {
 	// we're not interested in avatars
@@ -547,7 +548,11 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 		if len(data) == 0 {
 			return
 		}
-		log.Println("Transfer doesn't seem to exist!")
+		// TODO FIXME we run into this a lot... especially with large files
+		log.Println(tag, "Transfer doesn't seem to exist!", fileNumber)
+		// send that we won't be accepting this transfer after all
+		channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_CANCEL)
+		// and we're done
 		return
 	}
 	// write date to disk
