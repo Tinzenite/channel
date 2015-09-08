@@ -10,6 +10,7 @@ transfer is the object associated to a transfer.
 */
 type transfer struct {
 	file         *os.File
+	fileNumber   uint32
 	size         uint64
 	doneCallback OnDone
 	isDone       bool
@@ -18,7 +19,7 @@ type transfer struct {
 /*
 createTransfer builds a transfer object for the given file and the given callback.
 */
-func createTransfer(file *os.File, callback OnDone) *transfer {
+func createTransfer(file *os.File, fileNumber uint32, callback OnDone) *transfer {
 	stat, err := file.Stat()
 	if err != nil {
 		return nil
@@ -26,6 +27,7 @@ func createTransfer(file *os.File, callback OnDone) *transfer {
 	size := uint64(stat.Size())
 	return &transfer{
 		file:         file,
+		fileNumber:   fileNumber,
 		size:         size,
 		doneCallback: callback,
 		isDone:       false}
@@ -35,6 +37,7 @@ func createTransfer(file *os.File, callback OnDone) *transfer {
 close can be called to finish the transfer.
 */
 func (t *transfer) Close(success bool) {
+	log.Println("Transfer: closing transfer for", t.fileNumber)
 	if t.isDone {
 		log.Println("Transfer: WARNING: already closed! Won't execute.")
 		return

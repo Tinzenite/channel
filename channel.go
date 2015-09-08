@@ -260,7 +260,7 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(file, f)
+	channel.transfers[fileNumber] = createTransfer(file, fileNumber, f)
 	return nil
 }
 
@@ -492,10 +492,11 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 	if fileControl == gotox.TOX_FILE_CONTROL_CANCEL {
 		trans, exists := channel.transfers[filenumber]
 		if !exists {
+			log.Println(tag, "Transfer wasn't even tracked, ignoring!", filenumber)
 			// if it doesn't exist, ignore!
 			return
 		}
-		log.Println(tag, "Transfer was canceled!")
+		log.Println(tag, "Transfer was canceled!", filenumber)
 		// free resources
 		trans.Close(false)
 		delete(channel.transfers, filenumber)
@@ -532,7 +533,11 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		log.Println(tag, "Creating file to write receival of data to failed!", err)
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(f, nil)
+	channel.transfers[fileNumber] = createTransfer(f, fileNumber, func(done bool) {
+		if !done {
+			log.Println("Sending tranfser failed!", fileNumber)
+		}
+	})
 	// accept file send request if we come to here
 	channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_RESUME)
 }
@@ -549,7 +554,7 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 			return
 		}
 		// TODO FIXME we run into this a lot... especially with large files
-		log.Println(tag, "Transfer doesn't seem to exist!", fileNumber)
+		log.Println(tag, "Receive transfer doesn't seem to exist!", fileNumber)
 		// send that we won't be accepting this transfer after all
 		channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_CANCEL)
 		// and we're done
@@ -579,7 +584,7 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	trans, exists := channel.transfers[fileNumber]
 	// sanity check
 	if !exists {
-		log.Println(tag, "Failed to read", fileNumber, "from channel.transfers!")
+		log.Println(tag, "Send transfer doesn't seem to exist!", fileNumber)
 		return
 	}
 	// ensure that length is valid
