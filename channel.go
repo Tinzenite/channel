@@ -260,7 +260,7 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(file, fileNumber, f)
+	channel.transfers[fileNumber] = createTransfer(file, size, f)
 	return nil
 }
 
@@ -533,7 +533,7 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		log.Println(tag, "Creating file to write receival of data to failed!", err)
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(f, fileNumber, func(done bool) {
+	channel.transfers[fileNumber] = createTransfer(f, filesize, func(done bool) {
 		if !done {
 			log.Println("Sending tranfser failed!", fileNumber)
 		}
