@@ -33,6 +33,18 @@ func (t *transfer) SetProgress(value uint64) {
 }
 
 /*
+Percentage returns in percent the amount already transfered.
+*/
+func (t *transfer) Percentage() int {
+	// catch zero values
+	if t.progress == 0 || t.size == 0 {
+		return 0
+	}
+	// calculate
+	return int(100.0 * (float32(t.progress) / float32(t.size)))
+}
+
+/*
 close can be called to finish the transfer.
 */
 func (t *transfer) Close(success bool) {

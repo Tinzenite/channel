@@ -366,9 +366,7 @@ polling it regularly this can be used to offer feedback on long transfers.
 func (channel *Channel) ActiveTransfers() map[string]int {
 	list := make(map[string]int)
 	for _, transfer := range channel.transfers {
-		// calculate and set percentage value
-		percentage := int(100.0 * (float32(transfer.progress) / float32(transfer.size)))
-		list[transfer.file.Name()] = percentage
+		list[transfer.file.Name()] = transfer.Percentage()
 	}
 	return list
 }
