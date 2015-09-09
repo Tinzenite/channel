@@ -11,6 +11,7 @@ transfer is the object associated to a transfer.
 type transfer struct {
 	file         *os.File
 	size         uint64
+	progress     uint64
 	doneCallback OnDone
 	isDone       bool
 }
@@ -22,8 +23,13 @@ func createTransfer(file *os.File, size uint64, callback OnDone) *transfer {
 	return &transfer{
 		file:         file,
 		size:         size,
+		progress:     0,
 		doneCallback: callback,
 		isDone:       false}
+}
+
+func (t *transfer) SetProgress(value uint64) {
+	t.progress = value
 }
 
 /*

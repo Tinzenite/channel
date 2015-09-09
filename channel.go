@@ -359,6 +359,20 @@ func (channel *Channel) IsOnline() (bool, error) {
 	return false, nil
 }
 
+/*
+ActiveTransfers returns a map of file names and associated percentage done. By
+polling it regularly this can be used to offer feedback on long transfers.
+*/
+func (channel *Channel) ActiveTransfers() map[string]int {
+	list := make(map[string]int)
+	for _, transfer := range channel.transfers {
+		// calculate and set percentage value
+		percentage := int(100.0 * (float32(transfer.progress) / float32(transfer.size)))
+		list[transfer.file.Name()] = percentage
+	}
+	return list
+}
+
 // --- private methods here ---
 
 /*
@@ -401,6 +415,7 @@ func (channel *Channel) run() {
 			if online {
 				break
 			}
+			log.Println(tag, "Bootstrapping to Tox network with", len(toxNodes), "nodes.")
 			// try to bootstrap to all nodes. Better: random set of 4 nodes, but meh.
 			for _, node := range toxNodes {
 				err := channel.tox.Bootstrap(node.IPv4, node.Port, node.PublicKey)
@@ -562,6 +577,8 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 	}
 	// write date to disk
 	tran.file.WriteAt(data, (int64)(position))
+	// update progress
+	tran.SetProgress(position + uint64(len(data)))
 	// this means the file has been completey received
 	if position+uint64(len(data)) >= tran.size {
 		pathelements := strings.Split(tran.file.Name(), "/")
@@ -609,4 +626,6 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	if err != nil {
 		log.Println(tag, "File send error: ", err)
 	}
+	// update progress
+	trans.SetProgress(position + length)
 }
