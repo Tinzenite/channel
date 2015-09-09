@@ -205,11 +205,7 @@ func (channel *Channel) Send(address, message string) error {
 		return errOffline
 	}
 	// find friend id to send to
-	key, err := hex.DecodeString(address)
-	if err != nil {
-		return err
-	}
-	id, err := channel.tox.FriendByPublicKey(key)
+	id, err := channel.friendNumberOf(address)
 	if err != nil {
 		return err
 	}
@@ -232,11 +228,7 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return errOffline
 	}
 	// find friend id to send to
-	key, err := hex.DecodeString(address)
-	if err != nil {
-		return err
-	}
-	id, err := channel.tox.FriendByPublicKey(key)
+	id, err := channel.friendNumberOf(address)
 	if err != nil {
 		return err
 	}
@@ -260,7 +252,36 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(file, size, f)
+	channel.transfers[fileNumber] = createTransfer(path, id, file, size, f)
+	return nil
+}
+
+/*
+CancelFileTransfer cancels the file transfer that is writting to the given path.
+*/
+func (channel *Channel) CancelFileTransfer(path string) error {
+	// find fileNumber & transfer via file name
+	var found bool
+	var fileNumber uint32
+	var transfer *transfer
+	for thisNumber, thisTransfer := range channel.transfers {
+		if transfer.path == path {
+			found = true
+			fileNumber = thisNumber
+			transfer = thisTransfer
+			break
+		}
+	}
+	// if none found return error
+	if !found {
+		return errTransferNotFound
+	}
+	// cancel transfer
+	channel.tox.FileControl(transfer.friend, fileNumber, gotox.TOX_FILE_CONTROL_CANCEL)
+	// close transfer
+	transfer.Close(false)
+	// remove object
+	delete(channel.transfers, fileNumber)
 	return nil
 }
 
@@ -296,11 +317,7 @@ RemoveConnection removes a friend from the friendlist, effectivly terminating
 the connection.
 */
 func (channel *Channel) RemoveConnection(address string) error {
-	publicKey, err := hex.DecodeString(address)
-	if err != nil {
-		return err
-	}
-	num, err := channel.tox.FriendByPublicKey(publicKey)
+	num, err := channel.friendNumberOf(address)
 	if err != nil {
 		return err
 	}
@@ -311,11 +328,7 @@ func (channel *Channel) RemoveConnection(address string) error {
 IsAddressOnline checks whether the given address is currently reachable.
 */
 func (channel *Channel) IsAddressOnline(address string) (bool, error) {
-	publicKey, err := hex.DecodeString(address)
-	if err != nil {
-		return false, err
-	}
-	num, err := channel.tox.FriendByPublicKey(publicKey)
+	num, err := channel.friendNumberOf(address)
 	if err != nil {
 		return false, err
 	}
@@ -330,11 +343,7 @@ func (channel *Channel) IsAddressOnline(address string) (bool, error) {
 NameOf the key associated to the given address.
 */
 func (channel *Channel) NameOf(address string) (string, error) {
-	publicKey, err := hex.DecodeString(address)
-	if err != nil {
-		return "", err
-	}
-	num, err := channel.tox.FriendByPublicKey(publicKey)
+	num, err := channel.friendNumberOf(address)
 	if err != nil {
 		return "", err
 	}
@@ -434,6 +443,17 @@ func (channel *Channel) addressOf(friendnumber uint32) (string, error) {
 		return "", errLostAddress
 	}
 	return hex.EncodeToString(publicKey), nil
+}
+
+/*
+friendNumberOf the given address.
+*/
+func (channel *Channel) friendNumberOf(address string) (uint32, error) {
+	publicKey, err := hex.DecodeString(address)
+	if err != nil {
+		return 0, err
+	}
+	return channel.tox.FriendByPublicKey(publicKey)
 }
 
 // ---------------------------------CALLBACKS ----------------------------------
@@ -546,7 +566,7 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		log.Println(tag, "Creating file to write receival of data to failed!", err)
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(f, filesize, func(done bool) {
+	channel.transfers[fileNumber] = createTransfer(path, friendnumber, f, filesize, func(done bool) {
 		if !done {
 			log.Println("Sending tranfser failed!", fileNumber)
 		}

@@ -9,6 +9,8 @@ import (
 transfer is the object associated to a transfer.
 */
 type transfer struct {
+	path         string // key
+	friend       uint32
 	file         *os.File
 	size         uint64
 	progress     uint64
@@ -19,8 +21,10 @@ type transfer struct {
 /*
 createTransfer builds a transfer object for the given file and the given callback.
 */
-func createTransfer(file *os.File, size uint64, callback OnDone) *transfer {
+func createTransfer(path string, friendNumber uint32, file *os.File, size uint64, callback OnDone) *transfer {
 	return &transfer{
+		path:         path,
+		friend:       friendNumber,
 		file:         file,
 		size:         size,
 		progress:     0,
@@ -28,6 +32,9 @@ func createTransfer(file *os.File, size uint64, callback OnDone) *transfer {
 		isDone:       false}
 }
 
+/*
+SetProgress value of this transfer.
+*/
 func (t *transfer) SetProgress(value uint64) {
 	t.progress = value
 }
