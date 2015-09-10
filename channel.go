@@ -529,7 +529,6 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 			// if it doesn't exist, ignore!
 			return
 		}
-		log.Println(tag, "Transfer was canceled!", filenumber)
 		// free resources
 		trans.Close(false)
 		delete(channel.transfers, filenumber)
