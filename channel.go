@@ -265,7 +265,7 @@ func (channel *Channel) CancelFileTransfer(path string) error {
 	var fileNumber uint32
 	var transfer *transfer
 	for thisNumber, thisTransfer := range channel.transfers {
-		if transfer.path == path {
+		if thisTransfer.path == path {
 			found = true
 			fileNumber = thisNumber
 			transfer = thisTransfer
