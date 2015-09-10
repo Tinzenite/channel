@@ -12,6 +12,8 @@ type Callbacks interface {
 	/*OnFileReceived is called once the file has been successfully
 	received completely.*/
 	OnFileReceived(address, path, name string)
+	/*OnFileCanceled is called if a file transfer is canceled by the other side.*/
+	OnFileCanceled(address, path string)
 	/*OnConnected is called when a friend comes online.*/
 	OnConnected(address string)
 }

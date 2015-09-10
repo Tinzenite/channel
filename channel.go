@@ -469,7 +469,7 @@ func (channel *Channel) onFriendRequest(_ *gotox.Tox, publicKey []byte, message 
 		}
 		channel.callbacks.OnNewConnection(hex.EncodeToString(publicKey), message)
 	} else {
-		log.Println(tag, "Error: callbacks are nil!")
+		log.Println(tag, "No callback for OnNewConnection registered!")
 	}
 }
 
@@ -487,7 +487,7 @@ func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messa
 			}
 			channel.callbacks.OnMessage(address, message)
 		} else {
-			log.Println(tag, "callbacks are nil!")
+			log.Println(tag, "No callback for OnMessage registered!")
 		}
 	} else {
 		log.Println(tag, "Invalid message type, ignoring!")
@@ -505,15 +505,15 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	if connectionstatus == gotox.TOX_CONNECTION_NONE {
 		return
 	}
-	address, err := channel.addressOf(friendnumber)
-	if err != nil {
-		log.Println(tag, err)
-		return
-	}
 	if channel.callbacks != nil {
+		address, err := channel.addressOf(friendnumber)
+		if err != nil {
+			log.Println(tag, "OnConnected:", err)
+			return
+		}
 		channel.callbacks.OnConnected(address)
 	} else {
-		log.Println(tag, "No callback registered!")
+		log.Println(tag, "No callback for OnConnected registered!")
 	}
 }
 
@@ -533,6 +533,17 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 		// free resources
 		trans.Close(false)
 		delete(channel.transfers, filenumber)
+		// call callback
+		if channel.callbacks != nil {
+			address, err := channel.addressOf(friendnumber)
+			if err != nil {
+				log.Println(tag, "OnFileCanceled:", err)
+				return
+			}
+			channel.callbacks.OnFileCanceled(address, trans.path)
+		} else {
+			log.Println(tag, "No callback for OnFileCanceled registered!")
+		}
 	}
 }
 
@@ -546,6 +557,12 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		log.Println(tag, "Ignoring non data file transfer!")
 		// send cancel so that the other client knows that we blocked it
 		channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_CANCEL)
+		return
+	}
+	// this requires callbacks to be registered
+	if channel.callbacks == nil {
+		// required for receiving files
+		log.Println(tag, "No callback for OnAllowFile registered!")
 		return
 	}
 	// address
@@ -568,7 +585,7 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 	// create transfer object
 	channel.transfers[fileNumber] = createTransfer(path, friendnumber, f, filesize, func(done bool) {
 		if !done {
-			log.Println("Sending tranfser failed!", fileNumber)
+			log.Println("Transfer: sending failed!", path)
 		}
 	})
 	// accept file send request if we come to here
@@ -608,7 +625,12 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 		tran.Close(true)
 		delete(channel.transfers, fileNumber)
 		// call callback
-		channel.callbacks.OnFileReceived(address, path, name)
+		if channel.callbacks != nil {
+			channel.callbacks.OnFileReceived(address, path, name)
+		} else {
+			// this shouldn't happen as file can only be received with callbacks, but let us be sure
+			log.Println(tag, "No callback for OnFileReceived registered!")
+		}
 	}
 }
 
