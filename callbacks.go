@@ -3,7 +3,7 @@ package channel
 // Callbacks for external wrapped access.
 type Callbacks interface {
 	/*OnNewConnection is called on a Tox friend request.*/
-	OnNewConnection(address, message string)
+	OnFriendRequest(address, message string)
 	/*OnMessage is called on an incomming message.*/
 	OnMessage(address, message string)
 	/*OnAllowFile is called when a file transfer is wished. Returns the

@@ -467,7 +467,7 @@ func (channel *Channel) onFriendRequest(_ *gotox.Tox, publicKey []byte, message 
 		if len(publicKey) > 32 {
 			publicKey = publicKey[:32]
 		}
-		channel.callbacks.OnNewConnection(hex.EncodeToString(publicKey), message)
+		channel.callbacks.OnFriendRequest(hex.EncodeToString(publicKey), message)
 	} else {
 		log.Println(tag, "No callback for OnNewConnection registered!")
 	}
