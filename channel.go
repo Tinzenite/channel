@@ -467,7 +467,8 @@ func (channel *Channel) onFriendRequest(_ *gotox.Tox, publicKey []byte, message 
 		if len(publicKey) > 32 {
 			publicKey = publicKey[:32]
 		}
-		channel.callbacks.OnFriendRequest(hex.EncodeToString(publicKey), message)
+		// all real callbacks are run in separate go routines to keep ToxCore none blocking!
+		go channel.callbacks.OnFriendRequest(hex.EncodeToString(publicKey), message)
 	} else {
 		log.Println(tag, "No callback for OnNewConnection registered!")
 	}
@@ -485,7 +486,8 @@ func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messa
 				log.Println(tag, err)
 				address = illegalAddress
 			}
-			channel.callbacks.OnMessage(address, message)
+			// all real callbacks are run in separate go routines to keep ToxCore none blocking!
+			go channel.callbacks.OnMessage(address, message)
 		} else {
 			log.Println(tag, "No callback for OnMessage registered!")
 		}
@@ -511,7 +513,8 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 			log.Println(tag, "OnConnected:", err)
 			return
 		}
-		channel.callbacks.OnConnected(address)
+		// all real callbacks are run in separate go routines to keep ToxCore none blocking!
+		go channel.callbacks.OnConnected(address)
 	} else {
 		log.Println(tag, "No callback for OnConnected registered!")
 	}
@@ -539,7 +542,8 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 				log.Println(tag, "OnFileCanceled:", err)
 				return
 			}
-			channel.callbacks.OnFileCanceled(address, trans.path)
+			// all real callbacks are run in separate go routines to keep ToxCore none blocking!
+			go channel.callbacks.OnFileCanceled(address, trans.path)
 		} else {
 			log.Println(tag, "No callback for OnFileCanceled registered!")
 		}
@@ -570,7 +574,7 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		log.Println(tag, err.Error())
 		address = illegalAddress
 	}
-	// use callback to check whether to accept from Tinzenite
+	// use callback to check whether to accept from Tinzenite NOTE: this one blocks... :(
 	accept, path := channel.callbacks.OnAllowFile(address, filename)
 	if !accept {
 		return
@@ -602,7 +606,6 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 		if len(data) == 0 {
 			return
 		}
-		// TODO FIXME we run into this a lot... especially with large files
 		log.Println(tag, "Receive transfer doesn't seem to exist!", fileNumber)
 		// send that we won't be accepting this transfer after all
 		channel.tox.FileControl(friendnumber, fileNumber, gotox.TOX_FILE_CONTROL_CANCEL)
@@ -625,7 +628,8 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 		delete(channel.transfers, fileNumber)
 		// call callback
 		if channel.callbacks != nil {
-			channel.callbacks.OnFileReceived(address, path, name)
+			// all real callbacks are run in separate go routines to keep ToxCore none blocking!
+			go channel.callbacks.OnFileReceived(address, path, name)
 		} else {
 			// this shouldn't happen as file can only be received with callbacks, but let us be sure
 			log.Println(tag, "No callback for OnFileReceived registered!")

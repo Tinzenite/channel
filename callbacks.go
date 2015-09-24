@@ -1,6 +1,11 @@
 package channel
 
-// Callbacks for external wrapped access.
+/*
+Callbacks for external wrapped access. NOTE: all callbacks except for the
+OnAllowFile are called via go routines to keep ToxCore ticking steadily. This
+works because the ToxCore routine itself keeps running, thus allowing its child
+routines to execute too, even if the method returns.
+*/
 type Callbacks interface {
 	/*OnNewConnection is called on a Tox friend request.*/
 	OnFriendRequest(address, message string)
