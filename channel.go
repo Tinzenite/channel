@@ -497,7 +497,9 @@ func (channel *Channel) onFriendMessage(_ *gotox.Tox, friendnumber uint32, messa
 }
 
 /*
-TODO comment
+onFriendConnectionStatusChanges is called when a friend comes online, goes
+offline, or the connection state changes. In all cases we terminate any ongoing
+transfers (will need to be restarted).
 */
 func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumber uint32, connectionstatus gotox.ToxConnection) {
 	if channel.log {
@@ -516,6 +518,7 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	}
 	// if going offline do nothing
 	if connectionstatus == gotox.TOX_CONNECTION_NONE {
+		// TODO add callback: OnDisconnected
 		return
 	}
 	if channel.callbacks != nil {
