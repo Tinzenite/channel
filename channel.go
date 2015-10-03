@@ -503,6 +503,17 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	if channel.log {
 		log.Println(tag, "detected status change")
 	}
+	// cancel any running file transfers no matter what changed (if newly connected a disconnect happened before)
+	var canceled []uint32
+	for filenumber, trans := range channel.transfers {
+		if trans.friend == friendnumber {
+			trans.Close(false)
+			canceled = append(canceled, filenumber)
+		}
+	}
+	for _, filenumber := range canceled {
+		delete(channel.transfers, filenumber)
+	}
 	// if going offline do nothing
 	if connectionstatus == gotox.TOX_CONNECTION_NONE {
 		return
