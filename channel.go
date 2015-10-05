@@ -17,8 +17,6 @@ import (
 /*
 Channel is a wrapper of the gotox wrapper that creates and manages the underlying Tox
 instance.
-
-TODO all callbacks will block, need to avoid that especially when user interaction is required
 */
 type Channel struct {
 	tox       *gotox.Tox
@@ -505,12 +503,24 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	if channel.log {
 		log.Println(tag, "detected status change")
 	}
+	// get address of friend since we can't execute callbacks without out
+	address, err := channel.addressOf(friendnumber)
+	if err != nil {
+		log.Println(tag, "OnConnected: failed to retrieve address:", err)
+		// but continue with default value
+	}
 	// cancel any running file transfers no matter what changed (if newly connected a disconnect happened before)
 	var canceled []uint32
 	for filenumber, trans := range channel.transfers {
 		if trans.friend == friendnumber {
 			trans.Close(false)
 			canceled = append(canceled, filenumber)
+			// also callback OnFileCanceled!
+			if channel.callbacks != nil {
+				go channel.callbacks.OnFileCanceled(address, trans.path)
+			} else {
+				log.Println(tag, "No callback for OnFileCanceled registered!")
+			}
 		}
 	}
 	for _, filenumber := range canceled {
@@ -522,11 +532,6 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 		return
 	}
 	if channel.callbacks != nil {
-		address, err := channel.addressOf(friendnumber)
-		if err != nil {
-			log.Println(tag, "OnConnected:", err)
-			return
-		}
 		// all real callbacks are run in separate go routines to keep ToxCore none blocking!
 		go channel.callbacks.OnConnected(address)
 	} else {
