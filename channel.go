@@ -1,7 +1,6 @@
 package channel
 
 import (
-	"encoding/hex"
 	"errors"
 	"log"
 	"sync"
@@ -147,26 +146,4 @@ func (channel *Channel) run() {
 			} // bootstrap for
 		} // select
 	} // endless for
-}
-
-/*
-addressOf given friend number.
-*/
-func (channel *Channel) addressOf(friendnumber uint32) (string, error) {
-	publicKey, err := channel.tox.FriendGetPublickey(friendnumber)
-	if err != nil {
-		return "", errLostAddress
-	}
-	return hex.EncodeToString(publicKey), nil
-}
-
-/*
-friendNumberOf the given address.
-*/
-func (channel *Channel) friendNumberOf(address string) (uint32, error) {
-	publicKey, err := hex.DecodeString(address)
-	if err != nil {
-		return 0, err
-	}
-	return channel.tox.FriendByPublicKey(publicKey)
 }

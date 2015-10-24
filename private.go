@@ -11,6 +11,32 @@ import (
 )
 
 /*
+addressOf given friend number.
+*/
+func (channel *Channel) addressOf(friendnumber uint32) (string, error) {
+	publicKey, err := channel.tox.FriendGetPublickey(friendnumber)
+	if err != nil {
+		return "", errLostAddress
+	}
+	return hex.EncodeToString(publicKey), nil
+}
+
+/*
+friendNumberOf the given address.
+*/
+func (channel *Channel) friendNumberOf(address string) (uint32, error) {
+	publicKey, err := hex.DecodeString(address)
+	if err != nil {
+		return 0, err
+	}
+	return channel.tox.FriendByPublicKey(publicKey)
+}
+
+/*******************************************************************************
+NOTE: ALL BELOW ARE TOX CALLBACKS
+*******************************************************************************/
+
+/*
 onFriendRequest calls the appropriate callback, wrapping it sanely for our purposes.
 */
 func (channel *Channel) onFriendRequest(_ *gotox.Tox, publicKey []byte, message string) {
