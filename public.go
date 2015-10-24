@@ -150,14 +150,21 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return err
 	}
 	size := uint64(stat.Size())
-	// prepare send (file will be transmitted via filechunk)
-	fileNumber, err := channel.tox.FileSend(id, gotox.TOX_FILE_KIND_DATA, size, nil, identification)
-	if err != nil {
-		file.Close()
-		return err
-	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(path, id, file, size, f)
+	transfer := createTransfer(path, id, file, size, f)
+	// write to queue
+	channel.sending.add(address, transfer)
+	/*
+		TODO this must happen at some point... how?
+			// prepare send (file will be transmitted via filechunk)
+			fileNumber, err := channel.tox.FileSend(id, gotox.TOX_FILE_KIND_DATA, size, nil, identification)
+			if err != nil {
+				file.Close()
+				return err
+			}
+		// create transfer object
+		channel.transfers[fileNumber] = createTransfer(path, id, file, size, f)
+	*/
 	return nil
 }
 

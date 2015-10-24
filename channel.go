@@ -17,7 +17,8 @@ type Channel struct {
 	callbacks Callbacks            // callbacks that channel may call
 	wg        sync.WaitGroup       // for background thread
 	stop      chan bool            // for background thread
-	transfers map[uint32]*transfer // map of all ongoing transfers
+	transfers map[uint32]*transfer // map of all ongoing transfers: key is Tox file number
+	sending   *queues              // queue thingy for managing sending stuff
 }
 
 /*
