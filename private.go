@@ -237,9 +237,9 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		log.Println(tag, "Creating file to write receival of data to failed!", err)
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(path, friendnumber, f, filesize, func(done bool) {
-		if !done {
-			log.Println("Transfer: sending failed!", path)
+	channel.transfers[fileNumber] = createTransfer(path, friendnumber, f, filesize, func(status State) {
+		if status != StSuccess {
+			log.Println("Transfer: sending failed: "+status.String()+"!", path)
 		}
 	})
 	// accept file send request if we come to here

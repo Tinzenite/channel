@@ -72,7 +72,7 @@ func (t *transfer) Close(success bool) {
 	}
 	// execute callback if exists
 	if t.doneCallback != nil {
-		t.doneCallback(success)
+		t.doneCallback(StSuccess)
 	}
 	// and we're done
 }
