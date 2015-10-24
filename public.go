@@ -128,7 +128,7 @@ transfer!
 TODO: FIXME / NOTE: reimplement sending so that only ever one file is sent to an
 address at the same time. Also implement timeouts so that the queue can't block.
 */
-func (channel *Channel) SendFile(address string, path string, identification string, f OnDone) error {
+func (channel *Channel) SendFile(address string, path string, identification string, f func(status State)) error {
 	if ok, _ := channel.IsAddressOnline(address); !ok {
 		return errOffline
 	}

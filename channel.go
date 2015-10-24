@@ -21,12 +21,6 @@ type Channel struct {
 }
 
 /*
-OnDone is the function that is executed once the file has been sent / received.
-Can be nil.
-*/
-type OnDone func(status State)
-
-/*
 Create and starts a new tox channel that continously runs in the background
 until this object is destroyed.
 */

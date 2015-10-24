@@ -14,14 +14,14 @@ type transfer struct {
 	file         *os.File
 	size         uint64
 	progress     uint64
-	doneCallback OnDone
+	doneCallback func(status State)
 	isDone       bool
 }
 
 /*
 createTransfer builds a transfer object for the given file and the given callback.
 */
-func createTransfer(path string, friendNumber uint32, file *os.File, size uint64, callback OnDone) *transfer {
+func createTransfer(path string, friendNumber uint32, file *os.File, size uint64, callback func(status State)) *transfer {
 	return &transfer{
 		path:         path,
 		friend:       friendNumber,
