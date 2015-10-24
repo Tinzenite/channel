@@ -22,9 +22,7 @@ func (channel *Channel) Close() {
 	for _, transfer := range channel.transfers {
 		transfer.Close(false)
 	}
-	if channel.log {
-		log.Println(tag, "Closed.")
-	}
+	log.Println(tag, "Closed.")
 }
 
 /*

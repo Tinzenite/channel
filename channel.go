@@ -4,10 +4,8 @@ import (
 	"errors"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/codedust/go-tox"
-	"github.com/xamino/tox-dynboot"
 )
 
 /*
@@ -15,12 +13,11 @@ Channel is a wrapper of the gotox wrapper that creates and manages the underlyin
 instance.
 */
 type Channel struct {
-	tox       *gotox.Tox
-	callbacks Callbacks
-	wg        sync.WaitGroup
-	stop      chan bool
-	transfers map[uint32]*transfer
-	log       bool
+	tox       *gotox.Tox           // tox wrapper instance
+	callbacks Callbacks            // callbacks that channel may call
+	wg        sync.WaitGroup       // for background thread
+	stop      chan bool            // for background thread
+	transfers map[uint32]*transfer // map of all ongoing transfers
 }
 
 /*
@@ -90,60 +87,6 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	channel.wg.Add(1)
 	channel.stop = make(chan bool, 0)
 	go channel.run()
-	if channel.log {
-		log.Println("Channel: created.")
-	}
+	log.Println("Channel: created.")
 	return channel, nil
-}
-
-/*
-run is the background go routine method that keeps the Tox instance iterating
-until Close() is called.
-*/
-func (channel *Channel) run() {
-	// log when stopping background process (even if returning error)
-	defer func() { log.Println(tag, "Background process stopped.") }()
-	// read ToxNodes
-	toxNodes, err := toxdynboot.FetchAlive(1 * time.Second)
-	if err != nil {
-		log.Println(tag, "Fetching ToxNodes for Tox failed!", err)
-	}
-	// warn if less than 5 ToxNodes (even 0)
-	if len(toxNodes) < 5 {
-		log.Println(tag, "WARNING: Too few ToxNodes!", len(toxNodes), " ToxNodes found.")
-	}
-	// TODO: how to use tox.GetIterationIntervall to update ticker without performance loss? For now: just tick every 50ms
-	iterateTicker := time.Tick(50 * time.Millisecond)
-	// we check if we have to bootstrap every 10 seconds (this will allow clean reconnect if we ever loose internet)
-	bootTicker := time.Tick(10 * time.Second) // FIXME: if first start we can bootstrap every 5 seconds until connected
-	// endless loop until close is called for tox.Iterate
-	for {
-		// select whether we have to close, iterate, or check online status
-		select {
-		case <-channel.stop:
-			// close wg and return (we're done)
-			channel.wg.Done()
-			return
-		case <-iterateTicker:
-			// try to iterate
-			err := channel.tox.Iterate()
-			if err != nil {
-				log.Println(tag, "Run:", err)
-			}
-		case <-bootTicker:
-			// don't bootstrap if channel is online
-			online, _ := channel.IsOnline()
-			if online {
-				break
-			}
-			log.Println(tag, "Bootstrapping to Tox network with", len(toxNodes), "nodes.")
-			// try to bootstrap to all nodes. Better: random set of 4 nodes, but meh.
-			for _, node := range toxNodes {
-				err := channel.tox.Bootstrap(node.IPv4, node.Port, node.PublicKey)
-				if err != nil {
-					log.Println(tag, "Bootstrap error for a node:", err)
-				}
-			} // bootstrap for
-		} // select
-	} // endless for
 }

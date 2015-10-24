@@ -6,9 +6,63 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/codedust/go-tox"
+	"github.com/xamino/tox-dynboot"
 )
+
+/*
+run is the background go routine method that keeps the Tox instance iterating
+until Close() is called.
+*/
+func (channel *Channel) run() {
+	// log when stopping background process (even if returning error)
+	defer func() { log.Println(tag, "Background process stopped.") }()
+	// read ToxNodes
+	toxNodes, err := toxdynboot.FetchAlive(1 * time.Second)
+	if err != nil {
+		log.Println(tag, "Fetching ToxNodes for Tox failed!", err)
+	}
+	// warn if less than 5 ToxNodes (even 0)
+	if len(toxNodes) < 5 {
+		log.Println(tag, "WARNING: Too few ToxNodes!", len(toxNodes), " ToxNodes found.")
+	}
+	// TODO: how to use tox.GetIterationIntervall to update ticker without performance loss? For now: just tick every 50ms
+	iterateTicker := time.Tick(50 * time.Millisecond)
+	// we check if we have to bootstrap every 10 seconds (this will allow clean reconnect if we ever loose internet)
+	bootTicker := time.Tick(10 * time.Second) // FIXME: if first start we can bootstrap every 5 seconds until connected
+	// endless loop until close is called for tox.Iterate
+	for {
+		// select whether we have to close, iterate, or check online status
+		select {
+		case <-channel.stop:
+			// close wg and return (we're done)
+			channel.wg.Done()
+			return
+		case <-iterateTicker:
+			// try to iterate
+			err := channel.tox.Iterate()
+			if err != nil {
+				log.Println(tag, "Run:", err)
+			}
+		case <-bootTicker:
+			// don't bootstrap if channel is online
+			online, _ := channel.IsOnline()
+			if online {
+				break
+			}
+			log.Println(tag, "Bootstrapping to Tox network with", len(toxNodes), "nodes.")
+			// try to bootstrap to all nodes. Better: random set of 4 nodes, but meh.
+			for _, node := range toxNodes {
+				err := channel.tox.Bootstrap(node.IPv4, node.Port, node.PublicKey)
+				if err != nil {
+					log.Println(tag, "Bootstrap error for a node:", err)
+				}
+			} // bootstrap for
+		} // select
+	} // endless for
+}
 
 /*
 addressOf given friend number.
@@ -80,9 +134,7 @@ offline, or the connection state changes. In all cases we terminate any ongoing
 transfers (will need to be restarted).
 */
 func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumber uint32, connectionstatus gotox.ToxConnection) {
-	if channel.log {
-		log.Println(tag, "detected status change")
-	}
+	log.Println(tag, "detected status change")
 	// get address of friend since we can't execute callbacks without out
 	address, err := channel.addressOf(friendnumber)
 	if err != nil {
