@@ -12,10 +12,16 @@ func buildQueues() *queues {
 }
 
 func (qs *queues) add(address string, t *transfer) {
+	// don't add nil values
+	if t == nil {
+		return
+	}
 	_, exists := qs.heap[address]
+	// if queue for address doesn't exist yet, build it
 	if !exists {
 		qs.heap[address] = buildQueue()
 	}
+	// add to queue
 	qs.heap[address].add(t)
 }
 
@@ -34,10 +40,8 @@ type queue struct {
 	entries []*transfer
 }
 
-// TODO rewrite so that length is value and we extend slice only if required!
 const capacity = 4
 
-// TODO check if len 1 is max cap... not good. Also set to good value.
 func buildQueue() *queue {
 	return &queue{entries: make([]*transfer, 0, capacity)}
 }

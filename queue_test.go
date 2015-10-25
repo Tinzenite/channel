@@ -36,6 +36,7 @@ func TestQueues(t *testing.T) {
 	qs := buildQueues()
 	trans := createTransfer("transfer", 0, nil, 0, nil)
 	qs.add("one", trans)
+	qs.add("one", nil) // shouldn't be added
 	qs.add("one", trans)
 	qs.add("two", trans)
 	qs.add("four", trans)
