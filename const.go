@@ -10,6 +10,7 @@ var (
 	errOffline          = errors.New("address is not online")
 	errBootstrap        = errors.New("failed to bootstrap to any given node")
 	errTransferNotFound = errors.New("could not determine transfer for file name")
+	errSendBufferFull   = errors.New("sending buffer is full")
 )
 
 /*Default string values*/

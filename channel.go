@@ -13,12 +13,13 @@ Channel is a wrapper of the gotox wrapper that creates and manages the underlyin
 instance.
 */
 type Channel struct {
-	tox       *gotox.Tox           // tox wrapper instance
-	callbacks Callbacks            // callbacks that channel may call
-	wg        sync.WaitGroup       // for background thread
-	stop      chan bool            // for background thread
-	transfers map[uint32]*transfer // map of all ongoing transfers: key is Tox file number
-	sending   *queues              // queue thingy for managing sending stuff
+	tox        *gotox.Tox                // tox wrapper instance
+	callbacks  Callbacks                 // callbacks that channel may call
+	wg         sync.WaitGroup            // for background thread
+	stop       chan bool                 // for background thread
+	transfers  map[uint32]*transfer      // map of all ongoing transfers: key is Tox file number
+	sending    map[string]chan *transfer // map of pending transfers: key is address where transfer is going to
+	sendActive map[string]bool
 }
 
 /*
@@ -37,7 +38,9 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 
 	// prepare for file transfers
 	channel.transfers = make(map[uint32]*transfer)
-	channel.sending = buildQueues()
+	channel.sendActive = make(map[string]bool)
+	// TODO make limit setable etc
+	channel.sending = make(map[string]chan *transfer, 64)
 
 	// this decides whether we are initiating a new connection or using an existing one
 	if toxdata == nil {

@@ -32,6 +32,8 @@ func (channel *Channel) run() {
 	iterateTicker := time.Tick(50 * time.Millisecond)
 	// we check if we have to bootstrap every 10 seconds (this will allow clean reconnect if we ever loose internet)
 	bootTicker := time.Tick(10 * time.Second) // FIXME: if first start we can bootstrap every 5 seconds until connected
+	// ticker for starting new sending transfers
+	sendTicker := time.Tick(1 * time.Second)
 	// endless loop until close is called for tox.Iterate
 	for {
 		// select whether we have to close, iterate, or check online status
@@ -60,6 +62,25 @@ func (channel *Channel) run() {
 					log.Println(tag, "Bootstrap error for a node:", err)
 				}
 			} // bootstrap for
+		case <-sendTicker:
+			// for every sending candidate
+			for address, ready := range channel.sending {
+				// check if transfer already active
+				active, _ := channel.sendActive[address]
+				if active {
+					log.Println("DEBUG TRANSFER: address is busy")
+					// if yes don't start new transfer
+					continue
+				}
+				// if not active check if we can start new transfer
+				select {
+				case t := <-ready:
+					log.Println("DEBUG TRANSFER: starting transfer")
+					channel.triggerSend(address, t)
+				default:
+					// if none ready continue
+				}
+			}
 		} // select
 	} // endless for
 }
@@ -89,25 +110,18 @@ func (channel *Channel) friendNumberOf(address string) (uint32, error) {
 /*
 triggerSend makes sure that we start transfering a file for the given address.
 Will handle working through the queue in FIFO order.
-
-TODO: make sure to call this upon file sent success AND failure
 */
-func (channel *Channel) triggerSend(address string) {
-	// TODO check if address is already transfering something
-	trans := channel.sending.get(address)
-	// if we can't retrieve one nothing to send
-	if trans == nil {
-		return
-	}
+func (channel *Channel) triggerSend(address string, trans *transfer) {
 	// prepare send (file will be transmitted via filechunk)
 	fileNumber, err := channel.tox.FileSend(trans.friend, gotox.TOX_FILE_KIND_DATA, trans.size, nil, trans.name)
 	if err != nil {
+		log.Println("DEBUG TRANSFER: failed to send:", err)
 		// failed to send file
 		trans.Close(StFailed)
-		// start next one (will return once no file to transfer or transfer successfully started)
-		channel.triggerSend(address)
 		return
 	}
+	// note that we are currently transfering something
+	channel.sendActive[address] = true
 	// create transfer object
 	channel.transfers[fileNumber] = trans
 }
@@ -184,6 +198,10 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	for _, filenumber := range canceled {
 		delete(channel.transfers, filenumber)
 	}
+	// remember to set sendActive to false IF it was set!
+	if active, _ := channel.sendActive[address]; active {
+		channel.sendActive[address] = false
+	}
 	// if going offline do nothing
 	if connectionstatus == gotox.TOX_CONNECTION_NONE {
 		// TODO add callback: OnDisconnected
@@ -212,13 +230,18 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 		// free resources
 		trans.Close(StCanceled)
 		delete(channel.transfers, filenumber)
+		// get address
+		address, err := channel.addressOf(friendnumber)
+		if err != nil {
+			log.Println(tag, "OnFileCanceled:", err)
+			return
+		}
+		// remember to set sendActive to false IF it was set!
+		if active, _ := channel.sendActive[address]; active {
+			channel.sendActive[address] = false
+		}
 		// call callback
 		if channel.callbacks != nil {
-			address, err := channel.addressOf(friendnumber)
-			if err != nil {
-				log.Println(tag, "OnFileCanceled:", err)
-				return
-			}
 			// all real callbacks are run in separate go routines to keep ToxCore none blocking!
 			go channel.callbacks.OnFileCanceled(address, trans.path)
 		} else {
@@ -332,6 +355,12 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	if length == 0 {
 		trans.Close(StSuccess)
 		delete(channel.transfers, fileNumber)
+		// remember to set sendActive to false
+		address, _ := channel.addressOf(friendNumber)
+		// remember to set sendActive to false IF it was set!
+		if active, _ := channel.sendActive[address]; active {
+			channel.sendActive[address] = false
+		}
 		return
 	}
 	// get bytes to send

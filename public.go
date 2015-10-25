@@ -152,11 +152,14 @@ func (channel *Channel) SendFile(address string, path string, identification str
 	size := uint64(stat.Size())
 	// create transfer object
 	transfer := createTransfer(path, identification, friendID, file, size, f)
-	// write to queue
-	channel.sending.add(address, transfer)
-	// trigger sending to that address
-	channel.triggerSend(address)
-	return nil
+	// write to queue if possible
+	select {
+	case channel.sending[address] <- transfer:
+		return nil
+	default:
+		// if not return error so caller knows it failed
+		return errSendBufferFull
+	}
 }
 
 /*
