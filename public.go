@@ -20,7 +20,7 @@ func (channel *Channel) Close() {
 	channel.tox.Kill()
 	// clean all file transfers
 	for _, transfer := range channel.transfers {
-		transfer.Close(false)
+		transfer.Close(StCanceled)
 	}
 	log.Println(tag, "Closed.")
 }
@@ -133,7 +133,7 @@ func (channel *Channel) SendFile(address string, path string, identification str
 		return errOffline
 	}
 	// find friend id to send to
-	id, err := channel.friendNumberOf(address)
+	friendID, err := channel.friendNumberOf(address)
 	if err != nil {
 		return err
 	}
@@ -151,20 +151,11 @@ func (channel *Channel) SendFile(address string, path string, identification str
 	}
 	size := uint64(stat.Size())
 	// create transfer object
-	transfer := createTransfer(path, id, file, size, f)
+	transfer := createTransfer(path, identification, friendID, file, size, f)
 	// write to queue
 	channel.sending.add(address, transfer)
-	/*
-		TODO this must happen at some point... how?
-			// prepare send (file will be transmitted via filechunk)
-			fileNumber, err := channel.tox.FileSend(id, gotox.TOX_FILE_KIND_DATA, size, nil, identification)
-			if err != nil {
-				file.Close()
-				return err
-			}
-		// create transfer object
-		channel.transfers[fileNumber] = createTransfer(path, id, file, size, f)
-	*/
+	// trigger sending to that address
+	channel.triggerSend(address)
 	return nil
 }
 
@@ -191,7 +182,7 @@ func (channel *Channel) CancelFileTransfer(path string) error {
 	// cancel transfer
 	channel.tox.FileControl(transfer.friend, fileNumber, gotox.TOX_FILE_CONTROL_CANCEL)
 	// close transfer
-	transfer.Close(false)
+	transfer.Close(StCanceled)
 	// remove object
 	delete(channel.transfers, fileNumber)
 	return nil

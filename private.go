@@ -86,6 +86,32 @@ func (channel *Channel) friendNumberOf(address string) (uint32, error) {
 	return channel.tox.FriendByPublicKey(publicKey)
 }
 
+/*
+triggerSend makes sure that we start transfering a file for the given address.
+Will handle working through the queue in FIFO order.
+
+TODO: make sure to call this upon file sent success AND failure
+*/
+func (channel *Channel) triggerSend(address string) {
+	// TODO check if address is already transfering something
+	trans := channel.sending.get(address)
+	// if we can't retrieve one nothing to send
+	if trans == nil {
+		return
+	}
+	// prepare send (file will be transmitted via filechunk)
+	fileNumber, err := channel.tox.FileSend(trans.friend, gotox.TOX_FILE_KIND_DATA, trans.size, nil, trans.name)
+	if err != nil {
+		// failed to send file
+		trans.Close(StFailed)
+		// start next one (will return once no file to transfer or transfer successfully started)
+		channel.triggerSend(address)
+		return
+	}
+	// create transfer object
+	channel.transfers[fileNumber] = trans
+}
+
 /*******************************************************************************
 NOTE: ALL BELOW ARE TOX CALLBACKS
 *******************************************************************************/
@@ -145,7 +171,7 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 	var canceled []uint32
 	for filenumber, trans := range channel.transfers {
 		if trans.friend == friendnumber {
-			trans.Close(false)
+			trans.Close(StFailed)
 			canceled = append(canceled, filenumber)
 			// also callback OnFileCanceled!
 			if channel.callbacks != nil {
@@ -184,7 +210,7 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 			return
 		}
 		// free resources
-		trans.Close(false)
+		trans.Close(StCanceled)
 		delete(channel.transfers, filenumber)
 		// call callback
 		if channel.callbacks != nil {
@@ -237,7 +263,7 @@ func (channel *Channel) onFileRecv(_ *gotox.Tox, friendnumber uint32, fileNumber
 		log.Println(tag, "Creating file to write receival of data to failed!", err)
 	}
 	// create transfer object
-	channel.transfers[fileNumber] = createTransfer(path, friendnumber, f, filesize, func(status State) {
+	channel.transfers[fileNumber] = createTransfer(path, filename, friendnumber, f, filesize, func(status State) {
 		if status != StSuccess {
 			log.Println("Transfer: sending failed: "+status.String()+"!", path)
 		}
@@ -275,7 +301,7 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 		name := pathelements[len(pathelements)-1]
 		path := strings.Join(pathelements, "/")
 		// finish transfer
-		tran.Close(true)
+		tran.Close(StSuccess)
 		delete(channel.transfers, fileNumber)
 		// call callback
 		if channel.callbacks != nil {
@@ -304,7 +330,7 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 	}
 	// if we're already done we finish here without sending any more chunks
 	if length == 0 {
-		trans.Close(true)
+		trans.Close(StSuccess)
 		delete(channel.transfers, fileNumber)
 		return
 	}

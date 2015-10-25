@@ -10,6 +10,7 @@ transfer is the object associated to a transfer.
 */
 type transfer struct {
 	path         string // key
+	name         string //name of file while transfering (most likely ID for Tinzenite)
 	friend       uint32
 	file         *os.File
 	size         uint64
@@ -21,9 +22,10 @@ type transfer struct {
 /*
 createTransfer builds a transfer object for the given file and the given callback.
 */
-func createTransfer(path string, friendNumber uint32, file *os.File, size uint64, callback func(status State)) *transfer {
+func createTransfer(path, name string, friendNumber uint32, file *os.File, size uint64, callback func(status State)) *transfer {
 	return &transfer{
 		path:         path,
+		name:         name,
 		friend:       friendNumber,
 		file:         file,
 		size:         size,
@@ -54,7 +56,7 @@ func (t *transfer) Percentage() int {
 /*
 close can be called to finish the transfer.
 */
-func (t *transfer) Close(success bool) {
+func (t *transfer) Close(state State) {
 	if t.isDone {
 		log.Println("Transfer: WARNING: already closed! Won't execute.")
 		return
@@ -72,7 +74,7 @@ func (t *transfer) Close(success bool) {
 	}
 	// execute callback if exists
 	if t.doneCallback != nil {
-		t.doneCallback(StSuccess)
+		t.doneCallback(state)
 	}
 	// and we're done
 }
