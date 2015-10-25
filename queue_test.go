@@ -33,5 +33,35 @@ func TestQueue(t *testing.T) {
 }
 
 func TestQueues(t *testing.T) {
-	t.Fatal("Unimplemented")
+	qs := buildQueues()
+	trans := createTransfer("transfer", 0, nil, 0, nil)
+	qs.add("one", trans)
+	qs.add("one", trans)
+	qs.add("two", trans)
+	qs.add("four", trans)
+	// now try to retreive them
+	if nil == qs.get("one") {
+		t.Error("Expected transfer, got nil")
+	}
+	if nil == qs.get("two") {
+		t.Error("Expected transfer, got nil")
+	}
+	if nil == qs.get("four") {
+		t.Error("Expected transfer, got nil")
+	}
+	if nil != qs.get("two") {
+		t.Error("Expected nil, got transfer")
+	}
+	if nil != qs.get("four") {
+		t.Error("Expected nil, got transfer")
+	}
+	if nil != qs.get("three") {
+		t.Error("Expected nil, got transfer")
+	}
+	if nil == qs.get("one") {
+		t.Error("Expected transfer, got nil")
+	}
+	if nil != qs.get("one") {
+		t.Error("Expected nil, got transfer")
+	}
 }
