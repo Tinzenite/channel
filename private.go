@@ -66,23 +66,45 @@ func (channel *Channel) run() {
 			// for every sending candidate
 			for address, ready := range channel.sending {
 				// check if transfer already active
-				active, _ := channel.sendActive[address]
-				if active {
-					log.Println("DEBUG TRANSFER: address is busy")
-					// if yes don't start new transfer
-					continue
+				sendTran, exists := channel.sendActive[address]
+				// if not:
+				if !exists {
+					// check if we can start new transfer
+					select {
+					case t := <-ready:
+						log.Println("DEBUG TRANSFER: starting transfer")
+						channel.triggerSend(address, t)
+					default:
+						// if none ready do nothing
+					}
+					continue // try again later
 				}
-				// if not active check if we can start new transfer
-				select {
-				case t := <-ready:
-					log.Println("DEBUG TRANSFER: starting transfer")
-					channel.triggerSend(address, t)
-				default:
-					// if none ready continue
+				// if transfer exists check timeout
+				if sendTran.isStale() {
+					log.Println("DEBUG TRANSFER: transfer is stale, canceling it!")
+					// cancel transfer
+					channel.closeTransfer(sendTran.fileNumber, StTimeout)
+					// remove sendtransfer
+					delete(channel.sendActive, address)
 				}
+				log.Println("DEBUG TRANSFER: address is busy")
 			}
 		} // select
 	} // endless for
+}
+
+/*
+closeTransfer is a helper function that handles the complete removal of an active
+transfer including callbacks etc.
+*/
+func (channel *Channel) closeTransfer(fileNumber uint32, reason State) {
+	tran, exists := channel.transfers[fileNumber]
+	if !exists {
+		log.Println(tag, "WARNING: failed to close transfer, doesn't exist!")
+		return
+	}
+	tran.Close(reason)
+	delete(channel.transfers, fileNumber)
 }
 
 /*
@@ -121,7 +143,7 @@ func (channel *Channel) triggerSend(address string, trans *transfer) {
 		return
 	}
 	// note that we are currently transfering something
-	channel.sendActive[address] = true
+	channel.sendActive[address] = buildSendTransfer(fileNumber)
 	// create transfer object
 	channel.transfers[fileNumber] = trans
 }
@@ -182,25 +204,24 @@ func (channel *Channel) onFriendConnectionStatusChanges(_ *gotox.Tox, friendnumb
 		// but continue with default value
 	}
 	// cancel any running file transfers no matter what changed (if newly connected a disconnect happened before)
-	var canceled []uint32
+	canceled := make(map[uint32]*transfer)
 	for filenumber, trans := range channel.transfers {
 		if trans.friend == friendnumber {
-			trans.Close(StFailed)
-			canceled = append(canceled, filenumber)
-			// also callback OnFileCanceled!
-			if channel.callbacks != nil {
-				go channel.callbacks.OnFileCanceled(address, trans.path)
-			} else {
-				log.Println(tag, "No callback for OnFileCanceled registered!")
-			}
+			canceled[filenumber] = trans
 		}
 	}
-	for _, filenumber := range canceled {
-		delete(channel.transfers, filenumber)
+	for filenumber, tran := range canceled {
+		channel.closeTransfer(filenumber, StFailed)
+		// also callback OnFileCanceled!
+		if channel.callbacks != nil {
+			go channel.callbacks.OnFileCanceled(address, tran.path)
+		} else {
+			log.Println(tag, "No callback for OnFileCanceled registered!")
+		}
 	}
-	// remember to set sendActive to false IF it was set!
-	if active, _ := channel.sendActive[address]; active {
-		channel.sendActive[address] = false
+	// remember to remove from sendActive IF it existed!
+	if _, exists := channel.sendActive[address]; exists {
+		delete(channel.sendActive, address)
 	}
 	// if going offline do nothing
 	if connectionstatus == gotox.TOX_CONNECTION_NONE {
@@ -227,18 +248,17 @@ func (channel *Channel) onFileRecvControl(_ *gotox.Tox, friendnumber uint32, fil
 			// if it doesn't exist, ignore!
 			return
 		}
-		// free resources
-		trans.Close(StCanceled)
-		delete(channel.transfers, filenumber)
+		// close & remove transfer
+		channel.closeTransfer(filenumber, StCanceled)
 		// get address
 		address, err := channel.addressOf(friendnumber)
 		if err != nil {
 			log.Println(tag, "OnFileCanceled:", err)
 			return
 		}
-		// remember to set sendActive to false IF it was set!
-		if active, _ := channel.sendActive[address]; active {
-			channel.sendActive[address] = false
+		// remember to remove from sendActive IF it existed!
+		if _, exists := channel.sendActive[address]; exists {
+			delete(channel.sendActive, address)
 		}
 		// call callback
 		if channel.callbacks != nil {
@@ -323,9 +343,8 @@ func (channel *Channel) onFileRecvChunk(_ *gotox.Tox, friendnumber uint32, fileN
 		address, _ := channel.addressOf(friendnumber)
 		name := pathelements[len(pathelements)-1]
 		path := strings.Join(pathelements, "/")
-		// finish transfer
-		tran.Close(StSuccess)
-		delete(channel.transfers, fileNumber)
+		// close & remove transfer
+		channel.closeTransfer(fileNumber, StSuccess)
 		// call callback
 		if channel.callbacks != nil {
 			// all real callbacks are run in separate go routines to keep ToxCore none blocking!
@@ -347,19 +366,27 @@ func (channel *Channel) onFileChunkRequest(_ *gotox.Tox, friendNumber uint32, fi
 		log.Println(tag, "Send transfer doesn't seem to exist!", fileNumber)
 		return
 	}
+	// get address for working with sendTransfer
+	address, _ := channel.addressOf(friendNumber)
+	// if this callback is called the send transfer is active, so make sure the sendTransfer doesn't time out
+	sendTran, exists := channel.sendActive[address]
+	if !exists {
+		log.Println(tag, "WARNING: sending timeout can not be stopped!")
+	} else {
+		// set started to true since we're actually sending data
+		sendTran.started = true
+	}
 	// ensure that length is valid
 	if length+position > trans.size {
 		length = trans.size - position
 	}
 	// if we're already done we finish here without sending any more chunks
 	if length == 0 {
-		trans.Close(StSuccess)
-		delete(channel.transfers, fileNumber)
-		// remember to set sendActive to false
-		address, _ := channel.addressOf(friendNumber)
-		// remember to set sendActive to false IF it was set!
-		if active, _ := channel.sendActive[address]; active {
-			channel.sendActive[address] = false
+		// close & remove transfer
+		channel.closeTransfer(fileNumber, StSuccess)
+		// remember to remove from sendActive IF it existed!
+		if _, exists := channel.sendActive[address]; exists {
+			delete(channel.sendActive, address)
 		}
 		return
 	}

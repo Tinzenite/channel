@@ -1,6 +1,9 @@
 package channel
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 /*
 Internal errors of channel.
@@ -18,6 +21,12 @@ const (
 	illegalAddress = "unknown_address"
 	tag            = "Channel:"
 )
+
+/*
+sendTimeout after which the send is thrown away IF it isn't in progress (active
+data moving).
+*/
+const sendTimeout = 10 * time.Second
 
 /*
 State is an enumeration for notifying callbacks of transfer states.

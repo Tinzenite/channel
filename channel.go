@@ -19,7 +19,7 @@ type Channel struct {
 	stop       chan bool                 // for background thread
 	transfers  map[uint32]*transfer      // map of all ongoing transfers: key is Tox file number
 	sending    map[string]chan *transfer // map of pending transfers: key is address where transfer is going to
-	sendActive map[string]bool
+	sendActive map[string]*sendTransfer
 }
 
 /*
@@ -38,7 +38,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 
 	// prepare for file transfers
 	channel.transfers = make(map[uint32]*transfer)
-	channel.sendActive = make(map[string]bool)
+	channel.sendActive = make(map[string]*sendTransfer)
 	channel.sending = make(map[string]chan *transfer)
 
 	// this decides whether we are initiating a new connection or using an existing one
