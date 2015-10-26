@@ -124,9 +124,6 @@ func (channel *Channel) Send(address, message string) error {
 /*
 SendFile starts a file transfer to the given address. Will directly begin the
 transfer!
-
-TODO: FIXME / NOTE: reimplement sending so that only ever one file is sent to an
-address at the same time. Also implement timeouts so that the queue can't block.
 */
 func (channel *Channel) SendFile(address string, path string, identification string, f func(status State)) error {
 	if ok, _ := channel.IsAddressOnline(address); !ok {
@@ -151,10 +148,17 @@ func (channel *Channel) SendFile(address string, path string, identification str
 	}
 	size := uint64(stat.Size())
 	// create transfer object
-	transfer := createTransfer(path, identification, friendID, file, size, f)
+	tran := createTransfer(path, identification, friendID, file, size, f)
+	// create chan if not already exists
+	_, exists := channel.sending[address]
+	if !exists {
+		log.Println("DEBUG TRANSFER: making new buffer")
+		// TODO make chan size setable etc
+		channel.sending[address] = make(chan *transfer, 64)
+	}
 	// write to queue if possible
 	select {
-	case channel.sending[address] <- transfer:
+	case channel.sending[address] <- tran:
 		return nil
 	default:
 		// if not return error so caller knows it failed

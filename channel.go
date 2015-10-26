@@ -39,8 +39,7 @@ func Create(name string, toxdata []byte, callbacks Callbacks) (*Channel, error) 
 	// prepare for file transfers
 	channel.transfers = make(map[uint32]*transfer)
 	channel.sendActive = make(map[string]bool)
-	// TODO make limit setable etc
-	channel.sending = make(map[string]chan *transfer, 64)
+	channel.sending = make(map[string]chan *transfer)
 
 	// this decides whether we are initiating a new connection or using an existing one
 	if toxdata == nil {
