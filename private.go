@@ -72,7 +72,6 @@ func (channel *Channel) run() {
 					// check if we can start new transfer
 					select {
 					case t := <-ready:
-						log.Println("DEBUG TRANSFER: starting transfer")
 						channel.triggerSend(address, t)
 					default:
 						// if none ready do nothing
@@ -81,13 +80,11 @@ func (channel *Channel) run() {
 				}
 				// if transfer exists check timeout
 				if sendTran.isStale() {
-					log.Println("DEBUG TRANSFER: transfer is stale, canceling it!")
 					// cancel transfer
 					channel.closeTransfer(sendTran.fileNumber, StTimeout)
 					// remove sendtransfer
 					delete(channel.sendActive, address)
 				}
-				log.Println("DEBUG TRANSFER: address is busy")
 			}
 		} // select
 	} // endless for
@@ -137,7 +134,6 @@ func (channel *Channel) triggerSend(address string, trans *transfer) {
 	// prepare send (file will be transmitted via filechunk)
 	fileNumber, err := channel.tox.FileSend(trans.friend, gotox.TOX_FILE_KIND_DATA, trans.size, nil, trans.name)
 	if err != nil {
-		log.Println("DEBUG TRANSFER: failed to send:", err)
 		// failed to send file
 		trans.Close(StFailed)
 		return

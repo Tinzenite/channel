@@ -152,7 +152,6 @@ func (channel *Channel) SendFile(address string, path string, identification str
 	// create chan if not already exists
 	_, exists := channel.sending[address]
 	if !exists {
-		log.Println("DEBUG TRANSFER: making new buffer")
 		// TODO make chan size setable etc
 		channel.sending[address] = make(chan *transfer, 64)
 	}
